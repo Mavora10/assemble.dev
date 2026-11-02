@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { INITIAL_VENUES } from '../../data/initialData';
+import { venueService } from '../../services/venueService';
 
 export const VenueMarketplaceView = ({
   onBack,
@@ -35,20 +36,33 @@ export const VenueMarketplaceView = ({
     }
   }, [events, bookingEventName, isCustomEvent]);
 
-  // Combine initial venues with dynamically listed venues
-  const allVenues = useMemo(() => {
+  // Fetch venues from API then merge with local data
+  const [allVenues, setAllVenues] = useState(() => {
     const local = JSON.parse(localStorage.getItem('assemble_venues') || '[]');
     const combined = [...local, ...INITIAL_VENUES];
     const unique = [];
     const seen = new Set();
     combined.forEach((v) => {
       const key = v.id || v.name;
-      if (!seen.has(key)) {
-        seen.add(key);
-        unique.push(v);
-      }
+      if (!seen.has(key)) { seen.add(key); unique.push(v); }
     });
     return unique;
+  });
+
+  useEffect(() => {
+    venueService.getVenues().then(({ data, error }) => {
+      if (data && data.length > 0) {
+        const local = JSON.parse(localStorage.getItem('assemble_venues') || '[]');
+        const combined = [...local, ...data, ...INITIAL_VENUES];
+        const unique = [];
+        const seen = new Set();
+        combined.forEach((v) => {
+          const key = v.id || v.name;
+          if (!seen.has(key)) { seen.add(key); unique.push(v); }
+        });
+        setAllVenues(unique);
+      }
+    }).catch(() => { /* Backend offline — keep local data */ });
   }, []);
 
   // All bookings for current user / organizer

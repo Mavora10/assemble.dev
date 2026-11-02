@@ -26,6 +26,9 @@ import { RoleSetupView } from './components/views/RoleSetupView';
 import { getUserCapabilities, persistUserRecord, userHasRoleSetup } from './utils/roles';
 import { SPONSORSHIP_STATUS, sponsorshipNeedMatches } from './utils/sponsorship';
 import { ROLE_JOURNEY } from './components/landing/journey';
+import { eventService } from './services/eventService';
+import { communityService } from './services/communityService';
+import { ticketService } from './services/ticketService';
 
 // The landing experience (3D canvas + animations) loads separately from the app shell
 const LandingView = lazy(() => import('./components/landing/LandingView'));
@@ -385,6 +388,55 @@ export function App() {
   useEffect(() => {
     localStorage.setItem('assemble_goodies_orders', JSON.stringify(goodiesOrders));
   }, [goodiesOrders]);
+
+  // ── Backend hydration ──────────────────────────────────────────────────────
+  // On mount, fetch live data from FastAPI. If the backend is offline the app
+  // silently falls back to whatever is already in state (localStorage / initial data).
+  useEffect(() => {
+    // Hydrate events
+    eventService.getEvents({ limit: 50 }).then(({ data }) => {
+      if (data && data.length > 0) {
+        setEvents((prev) => {
+          const merged = [...data];
+          const apiIds = new Set(data.map((e) => e.id));
+          prev.forEach((e) => { if (!apiIds.has(e.id)) merged.push(e); });
+          return merged;
+        });
+      }
+    }).catch(() => {});
+
+    // Hydrate communities
+    communityService.getCommunities().then(({ data }) => {
+      if (data && data.length > 0) {
+        setCommunities((prev) => {
+          const merged = [...data];
+          const apiIds = new Set(data.map((c) => c.id));
+          prev.forEach((c) => { if (!apiIds.has(c.id)) merged.push(c); });
+          return merged;
+        });
+      }
+    }).catch(() => {});
+
+    // Hydrate own tickets (only if logged in)
+    const token = localStorage.getItem('assemble_auth_token');
+    if (token) {
+      ticketService.getMyTickets().then(({ data }) => {
+        if (data && data.length > 0) {
+          setTickets((prev) => {
+            const merged = [...data];
+            const apiIds = new Set(data.map((t) => t.ticket_id || t.ticketId));
+            prev.forEach((t) => {
+              const id = t.ticket_id || t.ticketId;
+              if (!apiIds.has(id)) merged.push(t);
+            });
+            return merged;
+          });
+        }
+      }).catch(() => {});
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  // ──────────────────────────────────────────────────────────────────────────
 
   const handleAddGoodiesToCart = (item) => {
     setGoodiesCart([...goodiesCart, item]);

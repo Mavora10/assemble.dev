@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { authService } from '../../services/authService';
 
 
 
@@ -7,8 +8,9 @@ export const LoginView = ({ navigate, onLoginSuccess }) => {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [fieldErrors, setFieldErrors] = useState({});
+  const [isLoading, setIsLoading] = useState(false);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
 
@@ -29,6 +31,29 @@ export const LoginView = ({ navigate, onLoginSuccess }) => {
       return;
     }
 
+    setIsLoading(true);
+
+    // --- API-first login ---
+    try {
+      const { user, error: apiError, isNetworkError } = await authService.signInUser({ email: email.trim(), password });
+      if (user && !apiError) {
+        onLoginSuccess(user);
+        setIsLoading(false);
+        return;
+      }
+      // If backend is down, fall through to local auth
+      if (!isNetworkError && apiError) {
+        // Real auth error from server (wrong password, etc.)
+        setFieldErrors({ email: apiError, password: apiError });
+        setError(apiError);
+        setIsLoading(false);
+        return;
+      }
+    } catch (_) {
+      // Network error — fall through to local
+    }
+
+    // --- Offline / demo fallback ---
     const localUsers = JSON.parse(localStorage.getItem('assemble_users') || '[]');
 
     const defaultUsers = [
@@ -45,6 +70,8 @@ export const LoginView = ({ navigate, onLoginSuccess }) => {
     const matchedUser = allUsers.find(
       (u) => u.email.toLowerCase() === email.trim().toLowerCase() && u.password === password
     );
+
+    setIsLoading(false);
 
     if (matchedUser) {
       onLoginSuccess(matchedUser);
@@ -178,9 +205,15 @@ export const LoginView = ({ navigate, onLoginSuccess }) => {
 
           <button
             type="submit"
-            className="w-full py-4 bg-[#0f4c81] text-white hover:bg-[#00355f] rounded-2xl font-geist font-bold text-xs shadow-md transition-all active:scale-98 cursor-pointer"
+            disabled={isLoading}
+            className="w-full py-4 bg-[#0f4c81] text-white hover:bg-[#00355f] rounded-2xl font-geist font-bold text-xs shadow-md transition-all active:scale-98 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
           >
-            Log In to Account
+            {isLoading ? (
+              <>
+                <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                Signing in…
+              </>
+            ) : 'Log In to Account'}
           </button>
         </form>
 

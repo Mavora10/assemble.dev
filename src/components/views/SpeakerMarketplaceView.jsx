@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { INITIAL_SPEAKERS } from '../../data/initialData';
+import { speakerService } from '../../services/speakerService';
 
 export const SpeakerMarketplaceView = ({
   onBack,
@@ -33,19 +34,32 @@ export const SpeakerMarketplaceView = ({
   }, [events, inviteEventTitle, isCustomEvent]);
 
   // Combine initial speakers with any dynamically registered speakers from local storage
-  const allSpeakers = useMemo(() => {
+  const [allSpeakers, setAllSpeakers] = useState(() => {
     const local = JSON.parse(localStorage.getItem('assemble_speakers') || '[]');
     const combined = [...local, ...INITIAL_SPEAKERS];
     const unique = [];
     const seen = new Set();
     combined.forEach((s) => {
       const key = s.id || s.email || s.name;
-      if (!seen.has(key)) {
-        seen.add(key);
-        unique.push(s);
-      }
+      if (!seen.has(key)) { seen.add(key); unique.push(s); }
     });
     return unique;
+  });
+
+  useEffect(() => {
+    speakerService.getSpeakers().then(({ data, error }) => {
+      if (data && data.length > 0) {
+        const local = JSON.parse(localStorage.getItem('assemble_speakers') || '[]');
+        const combined = [...local, ...data, ...INITIAL_SPEAKERS];
+        const unique = [];
+        const seen = new Set();
+        combined.forEach((s) => {
+          const key = s.id || s.email || s.name;
+          if (!seen.has(key)) { seen.add(key); unique.push(s); }
+        });
+        setAllSpeakers(unique);
+      }
+    }).catch(() => { /* Backend offline */ });
   }, []);
 
   // All invitations dispatched

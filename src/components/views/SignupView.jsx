@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { authService } from '../../services/authService';
 
 const VENUE_TYPES = [
   'Auditorium',
@@ -400,7 +401,7 @@ export const SignupView = ({
     finalizeSignup();
   };
 
-  const finalizeSignup = (createdCommunity = null) => {
+  const finalizeSignup = async (createdCommunity = null) => {
     const localUsers = JSON.parse(localStorage.getItem('assemble_users') || '[]');
 
     const newUser = {
@@ -526,6 +527,24 @@ export const SignupView = ({
         organizationName,
         orgType,
       };
+    }
+
+    // --- Try API registration (non-blocking — falls back to localStorage if backend is offline) ---
+    try {
+      const { user: apiUser } = await authService.signUpUser({
+        email,
+        password,
+        name: fullName,
+        phone,
+        city: location,
+        initialRole: selectedRole,
+      });
+      if (apiUser) {
+        // Merge API-returned id/token into the local user object
+        Object.assign(newUser, { id: apiUser.id, token: apiUser.token });
+      }
+    } catch (_) {
+      // Offline — rely on localStorage session only
     }
 
     localUsers.push(newUser);

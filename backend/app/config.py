@@ -14,5 +14,9 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
+    @property
+    def port(self) -> int:
+        return self.PORT
+
 settings = Settings()
 
