@@ -1,25 +1,34 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { INITIAL_VENUES, INITIAL_SPEAKERS, INITIAL_SERVICES } from '../../data/initialData';
 import { SPONSORSHIP_NEEDS } from '../../utils/sponsorship';
+import { canEditEvent, validateEventForPublish } from '../../utils/eventPermissions';
+import { ScheduleManager } from './ScheduleManager';
 import { Button, Icon } from '../ui';
 
-// Step ids are kept as before (4 was a removed catering step)
-const STEP_LABELS = { 1: 'Event basics', 2: 'Venue', 3: 'Speakers', 5: 'Swag & goodies', 6: 'Tickets', 7: 'Review & publish' };
-const STEP_ICONS = { 1: 'edit_note', 2: 'apartment', 3: 'record_voice_over', 5: 'redeem', 6: 'confirmation_number', 7: 'task_alt' };
+// Step ids (Step 4 is Schedule & Agenda)
+const STEP_LABELS = { 1: 'Event basics', 2: 'Venue', 3: 'Speakers', 4: 'Schedule', 5: 'Swag & goodies', 6: 'Tickets', 7: 'Review & publish' };
+const STEP_ICONS = { 1: 'edit_note', 2: 'apartment', 3: 'record_voice_over', 4: 'calendar_month', 5: 'redeem', 6: 'confirmation_number', 7: 'task_alt' };
 
 export const CreateEventView = ({
   onCancel,
   onSaveEvent,
   currentUser,
   preSelectedCommunity,
+  editingEvent = null,
 }) => {
+  const isEditing = Boolean(editingEvent);
+
+  // Ownership permission enforcement: if editing an event, only its owner may edit
+  const hasEditPermission = !isEditing || canEditEvent(editingEvent, currentUser);
+
   // Configurator capabilities state
-  const [enabledServices, setEnabledServices] = useState({
-    venue: true,
-    speakers: true,
-    goodies: false,
-    ticketing: true
-  });
+  const [enabledServices, setEnabledServices] = useState(() => ({
+    venue: editingEvent?.venueDetails ? true : true,
+    speakers: editingEvent?.speakers ? editingEvent.speakers.length > 0 : true,
+    schedule: true,
+    goodies: editingEvent?.swagOrder ? true : false,
+    ticketing: editingEvent?.ticketTiers ? editingEvent.ticketTiers.length > 0 : true
+  }));
 
   const [currentStep, setCurrentStep] = useState(1);
   const stepperRef = useRef(null);
@@ -34,29 +43,55 @@ export const CreateEventView = ({
   }, [currentStep]);
 
   // Volunteer & Community states
-  const [volunteersNeededOption, setVolunteersNeededOption] = useState('none');
-  const [volunteersCount, setVolunteersCount] = useState(10);
-  const [selectedCommunities, setSelectedCommunities] = useState(preSelectedCommunity ? [preSelectedCommunity] : []);
+  const [volunteersNeededOption, setVolunteersNeededOption] = useState(() => {
+    return (editingEvent?.volunteersNeeded && editingEvent.volunteersNeeded > 0) ? 'number' : 'none';
+  });
+  const [volunteersCount, setVolunteersCount] = useState(editingEvent?.volunteersNeeded || 10);
+  const [selectedCommunities, setSelectedCommunities] = useState(() => {
+    if (editingEvent?.associatedCommunities && editingEvent.associatedCommunities.length > 0) {
+      return editingEvent.associatedCommunities;
+    }
+    return preSelectedCommunity ? [preSelectedCommunity] : [];
+  });
 
   // Form State - Basics
-  const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
-  const [category, setCategory] = useState('Technology');
-  const [format, setFormat] = useState('In-Person');
-  const [startDate, setStartDate] = useState('2026-11-15');
-  const [endDate, setEndDate] = useState('');
-  const [time, setTime] = useState('10:00 AM');
-  const [city, setCity] = useState('Chennai');
-  const [expectedAttendees, setExpectedAttendees] = useState(250);
-  const [budget, setBudget] = useState(5000);
-  const [budgetType, setBudgetType] = useState('set-budget'); // 'set-budget' | 'no-budget'
-  // Sponsorship: what this event needs funding for. After publishing, sponsors see
-  // these needs and approved sponsorships are linked to the event automatically.
-  const [seekSponsors, setSeekSponsors] = useState(false);
-  const [sponsorNeeds, setSponsorNeeds] = useState([]); // [{ category, amount, note }]
+  const [title, setTitle] = useState(editingEvent?.title || '');
+  const [description, setDescription] = useState(editingEvent?.description || '');
+  const [category, setCategory] = useState(editingEvent?.category || 'Technology');
+  const [format, setFormat] = useState(editingEvent?.format || 'In-Person');
+  const [startDate, setStartDate] = useState(editingEvent?.startDate || '2026-11-15');
+  const [endDate, setEndDate] = useState(editingEvent?.endDate || '');
+  const [time, setTime] = useState(editingEvent?.time || '10:00 AM');
+  const [city, setCity] = useState(editingEvent?.city || 'Chennai');
+  const [expectedAttendees, setExpectedAttendees] = useState(editingEvent?.expectedAttendees ?? 250);
+  const [budget, setBudget] = useState(editingEvent?.budget ?? 5000);
+  const [budgetType, setBudgetType] = useState(() => {
+    if (editingEvent?.budgetType) return editingEvent.budgetType;
+    return (editingEvent?.budget && editingEvent.budget > 0) ? 'set-budget' : 'no-budget';
+  });
+  // Sponsorship: what this event needs funding for.
+  const [seekSponsors, setSeekSponsors] = useState(Boolean(
+    editingEvent?.seekingSponsors ||
+    (editingEvent?.sponsorshipOpportunities && editingEvent.sponsorshipOpportunities.length > 0)
+  ));
+  const [sponsorNeeds, setSponsorNeeds] = useState(() => {
+    if (editingEvent?.sponsorshipOpportunities && editingEvent.sponsorshipOpportunities.length > 0) {
+      return editingEvent.sponsorshipOpportunities.map((o) => ({
+        category: o.category,
+        amount: o.amount,
+        note: o.description || ''
+      }));
+    }
+    return [];
+  });
   const [imageUrl, setImageUrl] = useState(
+    editingEvent?.imageUrl ||
     'https://images.unsplash.com/photo-1540575467063-178a50c2df87?q=80&w=1200&auto=format&fit=crop'
   );
+
+  // Schedule & Agenda State
+  const [schedule, setSchedule] = useState(() => editingEvent?.schedule || []);
+  const [publishError, setPublishError] = useState('');
 
   const fileInputRef = useRef(null);
 
@@ -347,6 +382,7 @@ export const CreateEventView = ({
     const steps = [1]; // Step 1 (Basics) is always active
     if (enabledServices.venue) steps.push(2);
     if (enabledServices.speakers) steps.push(3);
+    steps.push(4); // Step 4 (Schedule) is always present
     if (enabledServices.goodies) steps.push(5);
     if (enabledServices.ticketing) steps.push(6);
     steps.push(7); // Step 7 (Review) is always active
@@ -477,6 +513,7 @@ export const CreateEventView = ({
     const newActiveSteps = [1];
     if (updated.venue) newActiveSteps.push(2);
     if (updated.speakers) newActiveSteps.push(3);
+    newActiveSteps.push(4);
     if (updated.goodies) newActiveSteps.push(5);
     if (updated.ticketing) newActiveSteps.push(6);
     newActiveSteps.push(7);
@@ -513,6 +550,7 @@ export const CreateEventView = ({
     // Keep your place unless the current step is no longer part of the plan
     const stillIncluded =
       currentStep === 1 ||
+      currentStep === 4 ||
       currentStep === 7 ||
       (currentStep === 2 && updated.venue) ||
       (currentStep === 3 && updated.speakers) ||
@@ -542,6 +580,13 @@ export const CreateEventView = ({
   // Estimated budget is replaced with manual budget state variable
 
   const handlePublish = (status) => {
+    setPublishError('');
+
+    if (isEditing && !hasEditPermission) {
+      setPublishError('You do not have permission to edit this event.');
+      return;
+    }
+
     const isVirtual = enabledServices.venue && venueOption === 'custom' && customVenueType === 'virtual';
 
     const venueName =
@@ -549,19 +594,30 @@ export const CreateEventView = ({
         ? selectedVenue.name
         : isVirtual
         ? 'Virtual Event'
-        : customVenueName || 'Main Convention Hall';
+        : customVenueName
+        ? customVenueName
+        : isEditing
+        ? (editingEvent?.location || 'Venue to be announced')
+        : (enabledServices.venue ? 'Main Convention Hall' : 'Venue to be announced');
     
     const venueAddress =
       enabledServices.venue && venueOption === 'marketplace' && selectedVenue
         ? `${selectedVenue.location}, ${selectedVenue.city}`
         : isVirtual
         ? virtualEventLink || 'Virtual Meeting Link'
-        : customVenueAddress || `${city} Center`;
+        : customVenueAddress
+        ? customVenueAddress
+        : isEditing
+        ? (editingEvent?.venueDetails?.address || 'Location details will be shared soon')
+        : (enabledServices.venue ? `${city} Center` : 'Location details will be shared soon');
+
+    const eventId = isEditing && editingEvent?.id ? editingEvent.id : `evt-created-${Date.now()}`;
 
     const newEvent = {
-      id: `evt-created-${Date.now()}`,
-      title: title || 'New Horizon Gathering',
-      description: description || 'Exclusive community gathering curated via Connect.',
+      ...(editingEvent || {}),
+      id: eventId,
+      title: title || (isEditing ? editingEvent?.title : 'New Horizon Gathering'),
+      description: description || (isEditing ? editingEvent?.description : 'Exclusive community gathering curated via Connect.'),
       category,
       format,
       startDate,
@@ -569,27 +625,30 @@ export const CreateEventView = ({
       time,
       location: venueName,
       city,
-      organizer: currentUser?.name || 'Curated Organizer',
-      organizerEmail: currentUser?.email || 'organizer@connect.dev',
+      organizer: isEditing ? (editingEvent?.organizer || currentUser?.name || 'Curated Organizer') : (currentUser?.name || 'Curated Organizer'),
+      organizerEmail: isEditing ? (editingEvent?.organizerEmail || currentUser?.email || 'organizer@connect.dev') : (currentUser?.email || 'organizer@connect.dev'),
+      organizerId: isEditing ? (editingEvent?.organizerId || currentUser?.id) : currentUser?.id,
       price: enabledServices.ticketing && ticketTiers.length > 0 ? ticketTiers[0].price : 0,
       isFree: enabledServices.ticketing ? ticketTiers.every((t) => t.price === 0) : true,
       imageUrl,
       expectedAttendees: Number(expectedAttendees),
-      registeredCount: 0,
-      checkedInCount: 0,
-      revenue: 0,
+      registeredCount: editingEvent?.registeredCount ?? 0,
+      checkedInCount: editingEvent?.checkedInCount ?? 0,
+      revenue: editingEvent?.revenue ?? 0,
       status,
-      speakers: enabledServices.speakers ? selectedSpeakers : [],
+      speakers: enabledServices.speakers ? selectedSpeakers : (editingEvent?.speakers || []),
+      schedule: schedule || [],
       venueDetails: {
+        ...(editingEvent?.venueDetails || {}),
         name: venueName,
         address: venueAddress,
-        facilities: selectedVenue?.amenities || ['A/V & Stage', 'Wi-Fi'],
+        facilities: selectedVenue?.amenities || editingEvent?.venueDetails?.facilities || ['A/V & Stage', 'Wi-Fi'],
         image: enabledServices.venue && venueOption === 'marketplace' && selectedVenue
           ? selectedVenue.image
-          : customVenueImage || null
+          : customVenueImage || editingEvent?.venueDetails?.image || null
       },
-      whatsIncluded: ['Full Session Access', 'Event Swag Bag', 'Networking Tea & Snacks'],
-      visibility: 'Public',
+      whatsIncluded: editingEvent?.whatsIncluded || ['Full Session Access', 'Event Swag Bag', 'Networking Tea & Snacks'],
+      visibility: editingEvent?.visibility || 'Public',
       volunteersNeeded: volunteersNeededOption === 'number' ? Number(volunteersCount) : 0,
       associatedCommunities: selectedCommunities,
       budget: budgetType === 'set-budget' ? Number(budget) : 0,
@@ -609,9 +668,9 @@ export const CreateEventView = ({
               status: 'Open',
             };
           })
-        : [],
-      sponsors: [],
-      ticketTiers: enabledServices.ticketing ? ticketTiers.map((t) => ({ ...t, sold: 0 })) : [],
+        : (editingEvent?.sponsorshipOpportunities || []),
+      sponsors: editingEvent?.sponsors || [],
+      ticketTiers: enabledServices.ticketing ? ticketTiers.map((t) => ({ ...t, sold: t.sold ?? 0 })) : (editingEvent?.ticketTiers || []),
       swagOrder: (enabledServices.goodies && selectedGoodies.length > 0) ? selectedGoodies.map((g) => ({
         product: g.name,
         type: g.type,
@@ -622,11 +681,36 @@ export const CreateEventView = ({
         printPlacement: g.printPlacements || null,
         engravingText: g.engravingText || null,
         specifications: g.specifications || null
-      })) : null
+      })) : (editingEvent?.swagOrder || null)
     };
+
+    if (status === 'published') {
+      const validation = validateEventForPublish(newEvent);
+      if (!validation.isValid) {
+        setPublishError(validation.error);
+        return;
+      }
+    }
 
     onSaveEvent(newEvent);
   };
+
+  if (!hasEditPermission) {
+    return (
+      <div className="px-4 md:px-10 max-w-[1280px] mx-auto py-16 text-center space-y-4 animate-fadeIn">
+        <div className="w-16 h-16 rounded-full bg-rose-500/10 text-rose-500 mx-auto flex items-center justify-center">
+          <Icon name="lock" className="!text-[32px]" />
+        </div>
+        <h2 className="font-geist text-2xl font-bold text-fg">You don't have permission to edit this event</h2>
+        <p className="text-sm text-fg/60 max-w-md mx-auto">
+          Only the organizer who created this event can edit its details or schedule.
+        </p>
+        <div className="pt-2">
+          <Button onClick={onCancel} icon="arrow_back">Go Back</Button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="px-4 md:px-10 max-w-[1280px] mx-auto py-8 space-y-8 animate-fadeIn">
@@ -635,12 +719,12 @@ export const CreateEventView = ({
         <div>
           <p className="flex items-center gap-2.5 text-[12px] font-medium uppercase tracking-[0.2em]" style={{ color: 'var(--accent-ink)' }}>
             <span className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'rgb(var(--accent-rgb) / 0.16)' }}>
-              <Icon name="add_circle" className="!text-[16px]" />
+              <Icon name={isEditing ? 'edit' : 'add_circle'} className="!text-[16px]" />
             </span>
-            Organizer · New event · Step {activeStepsList.indexOf(currentStep) + 1} of {activeStepsList.length}
+            Organizer · {isEditing ? 'Edit event' : 'New event'} · Step {activeStepsList.indexOf(currentStep) + 1} of {activeStepsList.length}
           </p>
           <h1 className="mt-3 font-geist font-semibold tracking-[-0.03em] text-fg text-[32px] leading-[1.06] sm:text-[40px]">
-            Create an event
+            {isEditing ? 'Edit event' : 'Create an event'}
             <br />
             <span className="font-display italic font-normal tracking-[-0.01em]" style={{ color: 'var(--accent-ink)' }}>
               {STEP_LABELS[currentStep]}
@@ -1536,53 +1620,19 @@ export const CreateEventView = ({
             </div>
           )}
 
-          {/* Step 4: Catering & Event Services */}
+          {/* Step 4: Schedule & Agenda */}
           {currentStep === 4 && (
             <div className="glass rounded-[28px] p-6 md:p-8 space-y-6 shadow-2xs">
-              <div className="flex justify-between items-center">
-                <h3 className="font-geist text-lg font-bold text-[#00355f]">Select Catering & Event Services</h3>
-                <span className="text-xs font-bold text-[#0f4c81] bg-[#d2e4ff] px-3 py-1 rounded-full">
-                  {selectedServices.length} Selected • ${selectedServices.reduce((a, b) => a + (b.estPrice || 0), 0)} Est.
-                </span>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {INITIAL_SERVICES.map((srv) => {
-                  const isSelected = selectedServices.some((s) => s.id === srv.id);
-                  return (
-                    <div
-                      key={srv.id}
-                      onClick={() => {
-                        if (isSelected) {
-                          setSelectedServices(selectedServices.filter((s) => s.id !== srv.id));
-                        } else {
-                          setSelectedServices([...selectedServices, srv]);
-                        }
-                      }}
-                      className={`p-4 border rounded-2xl cursor-pointer transition-all flex gap-4 ${
-                        isSelected
-                          ? 'border-[#0f4c81] bg-[#d2e4ff]/20 shadow-xs ring-2 ring-[#0f4c81]'
-                          : 'border-[#e1e3e4] bg-white hover:border-[#c2c7d1]'
-                      }`}
-                    >
-                      <img
-                        src={srv.image}
-                        alt={srv.name}
-                        className="w-16 h-16 rounded-xl object-cover"
-                      />
-                      <div className="space-y-1 flex-grow">
-                        <div className="flex justify-between items-start">
-                          <h4 className="font-geist font-bold text-[#00355f] text-sm">{srv.name}</h4>
-                          <span className="text-xs font-bold text-[#0f4c81]">${srv.estPrice}</span>
-                        </div>
-                        <p className="font-inter text-xs text-[#5f5e5e]">{srv.category}</p>
-                        <p className="font-inter text-[11px] text-[#727780] line-clamp-1">{srv.description}</p>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-
+              <ScheduleManager
+                schedule={schedule}
+                onChange={setSchedule}
+                eventDate={startDate}
+                eventSpeakers={enabledServices.speakers ? selectedSpeakers : []}
+                isOwner={true}
+              />
+              <p className="text-xs text-fg/50 italic text-center">
+                You can add sessions now, or save/publish without a schedule and update it later.
+              </p>
             </div>
           )}
 
@@ -2142,23 +2192,38 @@ export const CreateEventView = ({
                     </button>
                   </div>
 
+                  {/* Schedule & Agenda (Step 4) */}
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="flex items-center gap-1.5">
+                      <span className="text-emerald-600 font-bold">✓</span>
+                      <span className="text-[#00355f] font-semibold font-geist">4. Schedule & Agenda</span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setCurrentStep(4)}
+                      className="text-xs font-bold text-[#0f4c81] hover:underline cursor-pointer"
+                    >
+                      {schedule.length > 0 ? `Edit (${schedule.length} session${schedule.length > 1 ? 's' : ''})` : 'Add Schedule (Optional)'}
+                    </button>
+                  </div>
+
                   {/* Swag & Goodies (Step 5) */}
                   <div className="flex justify-between items-center text-xs">
                     <span className="flex items-center gap-1.5">
                       {!enabledServices.goodies ? (
                         <>
                           <span className="text-gray-400 font-bold">○</span>
-                          <span className="text-gray-400 font-geist">4. Swag & Goodies — Not Required</span>
+                          <span className="text-gray-400 font-geist">5. Swag & Goodies — Not Required</span>
                         </>
                       ) : skippedSteps.includes(5) ? (
                         <>
                           <span className="text-amber-500 font-bold">⚠</span>
-                          <span className="text-gray-500 font-medium font-geist">4. Swag & Goodies — Skipped</span>
+                          <span className="text-gray-500 font-medium font-geist">5. Swag & Goodies — Skipped</span>
                         </>
                       ) : (
                         <>
                           <span className="text-emerald-600 font-bold">✓</span>
-                          <span className="text-[#00355f] font-semibold font-geist">4. Swag & Goodies</span>
+                          <span className="text-[#00355f] font-semibold font-geist">5. Swag & Goodies</span>
                         </>
                       )}
                     </span>
@@ -2182,17 +2247,17 @@ export const CreateEventView = ({
                       {!enabledServices.ticketing ? (
                         <>
                           <span className="text-gray-400 font-bold">○</span>
-                          <span className="text-gray-400 font-geist">5. Registration & Ticketing — Not Required</span>
+                          <span className="text-gray-400 font-geist">6. Registration & Ticketing — Not Required</span>
                         </>
                       ) : skippedSteps.includes(6) ? (
                         <>
                           <span className="text-amber-500 font-bold">⚠</span>
-                          <span className="text-gray-500 font-medium font-geist">5. Registration & Ticketing — Skipped</span>
+                          <span className="text-gray-500 font-medium font-geist">6. Registration & Ticketing — Skipped</span>
                         </>
                       ) : (
                         <>
                           <span className="text-emerald-600 font-bold">✓</span>
-                          <span className="text-[#00355f] font-semibold font-geist">5. Registration & Ticketing</span>
+                          <span className="text-[#00355f] font-semibold font-geist">6. Registration & Ticketing</span>
                         </>
                       )}
                     </span>
@@ -2212,12 +2277,18 @@ export const CreateEventView = ({
                 </div>
               </div>
 
+              {publishError && (
+                <div className="p-4 bg-rose-500/10 border border-rose-500/20 text-rose-600 rounded-2xl text-xs font-medium text-center animate-fadeIn">
+                  {publishError}
+                </div>
+              )}
+
               <div className="flex justify-center gap-4 pt-4">
                 <Button variant="secondary" icon="draft" onClick={() => handlePublish('draft')}>
                   Save as draft
                 </Button>
                 <Button icon="rocket_launch" onClick={() => handlePublish('published')}>
-                  Publish event live
+                  {isEditing && editingEvent?.status === 'published' ? 'Update published event' : 'Publish event live'}
                 </Button>
               </div>
             </div>
@@ -2304,6 +2375,74 @@ export const CreateEventView = ({
                 hint: 'Invite keynote speakers and panellists',
                 status: selectedSpeakers.length ? `${selectedSpeakers.length} speaker${selectedSpeakers.length === 1 ? '' : 's'} selected` : 'Not set up yet',
               },
+            ].map((svc) => {
+              const on = enabledServices[svc.key];
+              return (
+                <li
+                  key={svc.key}
+                  className={`rounded-2xl px-3 py-2.5 border transition-colors ${on ? 'border-fg/10 bg-fg/[0.02]' : 'border-dashed border-fg/12'}`}
+                >
+                  <div className="flex items-center gap-3">
+                    <Icon name={svc.icon} className="!text-[20px]" style={{ color: on ? 'var(--accent-ink)' : undefined }} />
+                    <span className="flex-1 min-w-0">
+                      <span className={`block text-[13px] font-medium ${on ? 'text-fg' : 'text-fg/55'}`}>{svc.label}</span>
+                      <span className="block text-[12px] text-fg/50 truncate">{on ? svc.status : svc.hint}</span>
+                    </span>
+                    {/* Switch */}
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={on}
+                      aria-label={`Include ${svc.label}`}
+                      onClick={() => handleToggleService(svc.key)}
+                      className="relative w-10 h-6 rounded-full shrink-0 transition-colors cursor-pointer"
+                      style={{ background: on ? 'rgb(var(--accent-rgb))' : 'rgb(var(--fg-rgb) / 0.15)' }}
+                    >
+                      <span
+                        className="absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all duration-200"
+                        style={{ left: on ? 18 : 2 }}
+                      />
+                    </button>
+                  </div>
+                  {on && currentStep !== svc.step && (
+                    <button
+                      type="button"
+                      onClick={() => setCurrentStep(svc.step)}
+                      className="mt-1.5 ml-8 text-[12px] font-medium cursor-pointer hover:underline underline-offset-4"
+                      style={{ color: 'var(--accent-ink)' }}
+                    >
+                      Go to step
+                    </button>
+                  )}
+                </li>
+              );
+            })}
+
+            {/* Schedule Item */}
+            <li className="rounded-2xl px-3 py-2.5 border border-fg/10 bg-fg/[0.02]">
+              <div className="flex items-center gap-3">
+                <Icon name="calendar_month" className="!text-[20px]" style={{ color: 'var(--accent-ink)' }} />
+                <span className="flex-1 min-w-0">
+                  <span className="block text-[13px] font-medium text-fg">Schedule</span>
+                  <span className="block text-[12px] text-fg/50 truncate">
+                    {schedule.length > 0 ? `${schedule.length} session${schedule.length === 1 ? '' : 's'} planned` : 'Optional agenda'}
+                  </span>
+                </span>
+                <span className="text-[11px] text-fg/45 font-medium">Included</span>
+              </div>
+              {currentStep !== 4 && (
+                <button
+                  type="button"
+                  onClick={() => setCurrentStep(4)}
+                  className="mt-1.5 ml-8 text-[12px] font-medium cursor-pointer hover:underline underline-offset-4"
+                  style={{ color: 'var(--accent-ink)' }}
+                >
+                  Go to step
+                </button>
+              )}
+            </li>
+
+            {[
               {
                 key: 'goodies',
                 step: 5,

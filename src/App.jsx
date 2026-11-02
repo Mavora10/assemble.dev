@@ -25,6 +25,8 @@ import { RoleSetupPendingView } from './components/views/RoleSetupPendingView';
 import { RoleSetupView } from './components/views/RoleSetupView';
 import { getUserCapabilities, persistUserRecord, userHasRoleSetup } from './utils/roles';
 import { SPONSORSHIP_STATUS, sponsorshipNeedMatches } from './utils/sponsorship';
+import { canEditEvent } from './utils/eventPermissions';
+import { notifyRegisteredAttendees } from './utils/notifications';
 import { ROLE_JOURNEY } from './components/landing/journey';
 import { eventService } from './services/eventService';
 import { communityService } from './services/communityService';
@@ -313,6 +315,7 @@ export function App() {
     const saved = localStorage.getItem('assemble_events');
     return saved ? JSON.parse(saved) : INITIAL_EVENTS;
   });
+  const [editingEvent, setEditingEvent] = useState(null);
   const [tickets, setTickets] = useState(() => {
     const saved = localStorage.getItem('assemble_tickets');
     return saved ? JSON.parse(saved) : INITIAL_TICKETS;
@@ -984,12 +987,62 @@ export function App() {
     setViewedTicket(newTicket);
   };
 
-  // Handler: Save / Publish Created Event
+  // Handler: Save / Publish Created Event (Upsert with ownership check)
   const handleSaveEvent = (newEvent) => {
-    const updatedEvents = [newEvent, ...events];
-    setEvents(updatedEvents);
-    localStorage.setItem('assemble_events', JSON.stringify(updatedEvents));
+    setEvents((prev) => {
+      const existingIndex = prev.findIndex((e) => e.id === newEvent.id);
+      let updated;
+      if (existingIndex >= 0) {
+        // Enforce ownership check at the data layer
+        const existing = prev[existingIndex];
+        if (!canEditEvent(existing, currentUser)) {
+          console.warn('Unauthorized edit attempt blocked');
+          return prev;
+        }
+        // Update in place, preserving existing registrations, checkedIn, revenue, tickets
+        const mergedEvent = {
+          ...existing,
+          ...newEvent,
+          registeredCount: existing.registeredCount ?? newEvent.registeredCount ?? 0,
+          checkedInCount: existing.checkedInCount ?? newEvent.checkedInCount ?? 0,
+          revenue: existing.revenue ?? newEvent.revenue ?? 0,
+          tickets: existing.tickets ?? newEvent.tickets,
+          sponsors: existing.sponsors ?? newEvent.sponsors ?? []
+        };
+
+        // Notify registered attendees when finalized details (venue, speakers, schedule) change
+        notifyRegisteredAttendees(existing, mergedEvent, tickets);
+
+        updated = prev.map((e) => (e.id === newEvent.id ? mergedEvent : e));
+      } else {
+        updated = [newEvent, ...prev];
+      }
+      localStorage.setItem('assemble_events', JSON.stringify(updated));
+      return updated;
+    });
+    setEditingEvent(null);
     navigate('/dashboard');
+  };
+
+  // Handler: Update Schedule directly from EventDetails or ScheduleManager
+  const handleUpdateEventSchedule = (eventId, newSchedule) => {
+    setEvents((prev) => {
+      const target = prev.find((e) => e.id === eventId);
+      if (!target) return prev;
+      if (!canEditEvent(target, currentUser)) {
+        console.warn('Unauthorized schedule update attempt blocked');
+        return prev;
+      }
+      const updatedEvent = { ...target, schedule: newSchedule };
+      // Notify registered attendees about schedule update
+      notifyRegisteredAttendees(target, updatedEvent, tickets);
+
+      const updated = prev.map((e) =>
+        e.id === eventId ? updatedEvent : e
+      );
+      localStorage.setItem('assemble_events', JSON.stringify(updated));
+      return updated;
+    });
   };
 
   // Handler: Door Check-In Ticket
@@ -1277,7 +1330,14 @@ export function App() {
               events={events}
               tickets={tickets}
               onCheckInTicket={handleCheckInTicket}
-              onOpenCreateEvent={() => navigate('/create-event')}
+              onOpenCreateEvent={() => {
+                setEditingEvent(null);
+                navigate('/create-event');
+              }}
+              onEditEvent={(evt) => {
+                setEditingEvent(evt);
+                navigate('/create-event');
+              }}
               onSelectEvent={handleSelectEvent}
               setActiveView={handleActiveViewChange}
               goodiesCart={goodiesCart}
@@ -1378,14 +1438,17 @@ export function App() {
           <CreateEventView
             onCancel={() => {
               setPreSelectedCommunity(null);
+              setEditingEvent(null);
               navigate('/dashboard');
             }}
             onSaveEvent={(newEvent) => {
               handleSaveEvent(newEvent);
               setPreSelectedCommunity(null);
+              setEditingEvent(null);
             }}
             currentUser={currentUser}
             preSelectedCommunity={preSelectedCommunity}
+            editingEvent={editingEvent}
           />
         );
       case '/discover':
@@ -1416,6 +1479,11 @@ export function App() {
               communities={communities}
               onAnalyzeCommunity={handleAnalyzeCommunity}
               onRequestSponsorship={handleRequestSponsorship}
+              onUpdateSchedule={handleUpdateEventSchedule}
+              onEditEvent={(evt) => {
+                setEditingEvent(evt);
+                navigate('/create-event');
+              }}
             />
           );
         }
@@ -1590,6 +1658,8 @@ export function App() {
         setSelectedCity={setSelectedCity}
         userRole={userRole}
         onRoleChange={handleRoleChange}
+        events={events}
+        onSelectEvent={handleSelectEvent}
       />
 
       {/* Main Content Area */}

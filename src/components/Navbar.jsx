@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { userHasRoleSetup } from '../utils/roles';
+import { NotificationBell } from './NotificationBell';
 
 export const ALL_CITIES = 'All Cities';
 export const CITIES = [ALL_CITIES, 'Chennai', 'Bangalore', 'San Francisco', 'New York', 'London', 'Tokyo'];
@@ -62,6 +63,8 @@ export const Navbar = ({
   setSelectedCity,
   userRole,
   onRoleChange,
+  events = [],
+  onSelectEvent,
 }) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [locationDropdownOpen, setLocationDropdownOpen] = useState(false);
@@ -212,6 +215,9 @@ export const Navbar = ({
 
         {/* Actions */}
         <div className="flex items-center gap-2.5 shrink-0">
+          {currentUser && (
+            <NotificationBell currentUser={currentUser} onSelectEvent={onSelectEvent} events={events} />
+          )}
           {onToggleTheme && (
             <button
               type="button"

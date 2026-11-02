@@ -1,5 +1,6 @@
-import React, { useState, useMemo } from 'react';
-import { PageHeader, Button, Tabs, StatTile, StatGrid } from '../ui';
+import React, { useState, useMemo, useEffect } from 'react';
+import { PageHeader, Button, Tabs, StatTile, StatGrid, Icon } from '../ui';
+import { getNotifications, markNotificationAsRead, markAllNotificationsAsRead } from '../../utils/notifications';
 
 export const AttendeeDashboardView = ({
   currentUser,
@@ -17,10 +18,26 @@ export const AttendeeDashboardView = ({
   selectedCity,
 }) => {
   // Finding events lives in Browse Events; the dashboard is the attendee's personal hub
-  const [activeTab, setActiveTab] = useState('my-events'); // 'my-events' | 'communities'
+  const [activeTab, setActiveTab] = useState('my-events'); // 'my-events' | 'updates' | 'communities'
   const [communityCode, setCommunityCode] = useState('');
   const [communityStatusMsg, setCommunityStatusMsg] = useState('');
   const [isCommunityError, setIsCommunityError] = useState(false);
+
+  const [notifications, setNotifications] = useState(() => getNotifications(currentUser?.email));
+
+  useEffect(() => {
+    const handleUpdate = () => {
+      setNotifications(getNotifications(currentUser?.email));
+    };
+    window.addEventListener('assemble_notifications_updated', handleUpdate);
+    window.addEventListener('storage', handleUpdate);
+    return () => {
+      window.removeEventListener('assemble_notifications_updated', handleUpdate);
+      window.removeEventListener('storage', handleUpdate);
+    };
+  }, [currentUser?.email]);
+
+  const unreadCount = notifications.filter((n) => !n.read).length;
 
   // Filter tickets into upcoming vs past
   const now = new Date();
@@ -145,6 +162,7 @@ export const AttendeeDashboardView = ({
         onChange={setActiveTab}
         items={[
           { id: 'my-events', label: 'My events & tickets', icon: 'confirmation_number', count: tickets.length },
+          { id: 'updates', label: 'Event updates', icon: 'notifications', count: unreadCount },
           { id: 'communities', label: 'Communities & rooms', icon: 'groups', count: userCommunityNames.length },
         ]}
       />
@@ -233,6 +251,125 @@ export const AttendeeDashboardView = ({
                   </div>
                 </div>
               ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* SECTION: Event Updates & Finalized Notifications */}
+      {activeTab === 'updates' && (
+        <div className="space-y-6">
+          <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-3">
+            <div>
+              <h2 className="font-geist text-xl font-bold text-fg">Event Updates & Announcements</h2>
+              <p className="font-inter text-xs text-fg/60">
+                Finalized venues, newly added speakers, and schedule updates for your registered events.
+              </p>
+            </div>
+            {unreadCount > 0 && (
+              <Button
+                variant="secondary"
+                size="sm"
+                icon="mark_email_read"
+                onClick={() => markAllNotificationsAsRead(currentUser?.email)}
+              >
+                Mark all read
+              </Button>
+            )}
+          </div>
+
+          {notifications.length === 0 ? (
+            <div className="text-center py-16 glass rounded-3xl border border-fg/10 p-8 space-y-3">
+              <div className="w-16 h-16 rounded-2xl bg-fg/[0.05] text-fg/40 flex items-center justify-center mx-auto">
+                <Icon name="notifications_off" className="!text-[32px]" />
+              </div>
+              <h3 className="font-geist text-base font-semibold text-fg">No updates yet</h3>
+              <p className="font-inter text-xs text-fg/50 max-w-sm mx-auto">
+                When organizers finalize venues, announce speakers, or publish agendas for events you hold passes for, real-time notifications will appear here.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {notifications.map((notif) => {
+                const targetEvent = events.find((e) => e.id === notif.eventId);
+                return (
+                  <div
+                    key={notif.id}
+                    className={`glass rounded-2xl p-5 border transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${
+                      notif.read ? 'border-fg/10 bg-fg/[0.02]' : 'border-[color:var(--accent-ink)]/30 bg-[color:var(--accent-ink)]/10'
+                    }`}
+                  >
+                    <div className="space-y-2 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        {!notif.read && (
+                          <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
+                        )}
+                        <span className="font-geist font-bold text-sm text-fg">
+                          {notif.eventTitle}
+                        </span>
+                        <span className="text-[11px] text-fg/40">
+                          {new Date(notif.createdAt).toLocaleDateString(undefined, {
+                            month: 'short',
+                            day: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit'
+                          })}
+                        </span>
+                      </div>
+
+                      <p className="text-xs text-fg/80 leading-relaxed font-medium">
+                        {notif.summary}
+                      </p>
+
+                      <div className="flex flex-wrap gap-2 pt-1">
+                        {notif.details?.venue && (
+                          <span className="text-[11px] px-2.5 py-1 rounded-lg bg-fg/[0.06] text-fg/80 flex items-center gap-1 font-medium">
+                            <Icon name="apartment" className="!text-[14px] text-[color:var(--accent-ink)]" />
+                            {notif.details.venue}
+                          </span>
+                        )}
+                        {notif.details?.speakers && notif.details.speakers.length > 0 && (
+                          <span className="text-[11px] px-2.5 py-1 rounded-lg bg-fg/[0.06] text-fg/80 flex items-center gap-1 font-medium">
+                            <Icon name="record_voice_over" className="!text-[14px] text-[color:var(--accent-ink)]" />
+                            {notif.details.speakers.join(', ')}
+                          </span>
+                        )}
+                        {notif.details?.scheduleCount > 0 && (
+                          <span className="text-[11px] px-2.5 py-1 rounded-lg bg-fg/[0.06] text-fg/80 flex items-center gap-1 font-medium">
+                            <Icon name="calendar_month" className="!text-[14px] text-[color:var(--accent-ink)]" />
+                            {notif.details.scheduleCount} Schedule Sessions
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+                      {!notif.read && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => markNotificationAsRead(notif.id)}
+                          className="!text-[11px]"
+                        >
+                          Mark read
+                        </Button>
+                      )}
+                      {targetEvent && onSelectEvent && (
+                        <Button
+                          size="sm"
+                          onClick={() => {
+                            markNotificationAsRead(notif.id);
+                            onSelectEvent(targetEvent);
+                          }}
+                          className="!text-[11px]"
+                        >
+                          View Event
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>

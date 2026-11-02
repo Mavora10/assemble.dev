@@ -5,6 +5,7 @@ import { SponsorshipSection } from './SponsorshipSection';
 import { VenueMarketplaceView } from './VenueMarketplaceView';
 import { SpeakerMarketplaceView } from './SpeakerMarketplaceView';
 import { EventAnalyticsView } from './EventAnalyticsView';
+import { isEventOwner } from '../../utils/eventPermissions';
 
 const STATUS_STYLES = {
   published: 'bg-[rgb(147_211_164/0.16)] text-[color:var(--volunteer-ink)]',
@@ -23,6 +24,7 @@ export const OrganizerDashboardView = ({
   tickets,
   onCheckInTicket,
   onOpenCreateEvent,
+  onEditEvent,
   onSelectEvent,
   setActiveView,
   goodiesCart,
@@ -49,16 +51,7 @@ export const OrganizerDashboardView = ({
   const [dashboardTab, setDashboardTab] = useState('attendees');
 
   // Filter events belonging to current organizer
-  const managedEvents = events.filter((evt) => {
-    if (!currentUser) return false;
-    if (evt.organizerEmail && currentUser.email) {
-      return evt.organizerEmail.toLowerCase() === currentUser.email.toLowerCase();
-    }
-    if (evt.organizer && currentUser.name) {
-      return evt.organizer.toLowerCase() === currentUser.name.toLowerCase();
-    }
-    return false;
-  });
+  const managedEvents = events.filter((evt) => isEventOwner(evt, currentUser));
 
   // Open the per-event console straight on a given tab
   const openCheckIn = (evt) => {
@@ -103,6 +96,7 @@ export const OrganizerDashboardView = ({
         tickets={tickets}
         onBack={handleBackToEventsList}
         onSelectEvent={onSelectEvent}
+        onEditEvent={onEditEvent}
         onCheckInTicket={onCheckInTicket}
         onUpdateTicket={onUpdateTicket}
         onUpdateEventExpenses={onUpdateEventExpenses}
@@ -213,6 +207,17 @@ export const OrganizerDashboardView = ({
                         <td className="px-5 py-4 font-semibold text-fg whitespace-nowrap">${evt.revenue.toLocaleString()}</td>
                         <td className="px-5 py-4">
                           <div className="flex justify-end gap-1.5">
+                            {onEditEvent && (
+                              <Button
+                                variant="ghost"
+                                icon="edit"
+                                className="!px-3 !py-1.5 !text-[12px]"
+                                onClick={() => onEditEvent(evt)}
+                                title={evt.status === 'draft' ? 'Edit & Publish Draft' : 'Edit Event'}
+                              >
+                                {evt.status === 'draft' ? 'Edit Draft' : 'Edit'}
+                              </Button>
+                            )}
                             <Button variant="secondary" icon="qr_code_scanner" className="!px-3.5 !py-1.5 !text-[12px]" onClick={() => openCheckIn(evt)} title="Open live door check-in for this event">
                               Check-in
                             </Button>
@@ -243,7 +248,17 @@ export const OrganizerDashboardView = ({
                         <span className="font-semibold text-fg">{evt.registeredCount}</span> / {evt.expectedAttendees} · <span className="font-semibold text-fg">${evt.revenue.toLocaleString()}</span>
                       </span>
                     </div>
-                    <div className="grid grid-cols-3 gap-2 mt-3">
+                    <div className={`grid ${onEditEvent ? 'grid-cols-4' : 'grid-cols-3'} gap-2 mt-3`}>
+                      {onEditEvent && (
+                        <Button
+                          variant="ghost"
+                          icon="edit"
+                          className="!px-2 !text-[12px]"
+                          onClick={() => onEditEvent(evt)}
+                        >
+                          {evt.status === 'draft' ? 'Draft' : 'Edit'}
+                        </Button>
+                      )}
                       <Button variant="secondary" icon="qr_code_scanner" className="!px-2 !text-[12px]" onClick={() => openCheckIn(evt)}>Check-in</Button>
                       <Button className="!px-2 !text-[12px]" onClick={() => openAnalytics(evt)}>Analytics</Button>
                       <Button variant="ghost" className="!px-2 !text-[12px]" onClick={() => onSelectEvent(evt)}>View</Button>

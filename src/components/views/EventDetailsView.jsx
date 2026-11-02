@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import { resolveCommunityForEvent } from '../../utils/communityAnalysis';
+import { isEventOwner, getUnfinalizedDetails } from '../../utils/eventPermissions';
+import { ScheduleManager } from './ScheduleManager';
 
 export const EventDetailsView = ({
   event,
@@ -16,12 +18,16 @@ export const EventDetailsView = ({
   communities = [],
   onAnalyzeCommunity,
   onRequestSponsorship,
+  onUpdateSchedule,
+  onEditEvent,
 }) => {
   const [activeTab, setActiveTab] = useState('overview');
   const [selectedTier, setSelectedTier] = useState(() => {
     return event.ticketTiers && event.ticketTiers.length > 0 ? event.ticketTiers[0] : null;
   });
 
+  const isOwner = isEventOwner(event, currentUser);
+  const unfinalized = getUnfinalizedDetails(event);
   const resolvedCommunity = resolveCommunityForEvent(event, communities);
   // Strictly check active role so role switches immediately update visibility
   const effectiveRole = activeRole || userRole || currentUser?.role || 'attendee';
@@ -112,6 +118,16 @@ export const EventDetailsView = ({
         </div>
 
         <div className="flex items-center gap-2.5">
+          {isOwner && onEditEvent && (
+            <button
+              onClick={() => onEditEvent(event)}
+              className="px-4 py-2 rounded-full border border-blue-600 bg-blue-600 text-white hover:bg-blue-700 transition-all flex items-center gap-1.5 text-xs font-bold cursor-pointer shadow-xs"
+              title="Edit event details and agenda"
+            >
+              <span className="material-symbols-outlined text-[16px]">edit</span>
+              <span>Edit Event</span>
+            </button>
+          )}
           <button
             onClick={onToggleSave}
             className={`px-4 py-2 rounded-full border transition-all flex items-center gap-1.5 text-xs font-bold cursor-pointer ${
@@ -153,6 +169,39 @@ export const EventDetailsView = ({
             <span>For Analysis</span>
             <span>→</span>
           </button>
+        </div>
+      )}
+
+      {/* Unfinalized Event Details Banner (Speakers, Venue, or Schedule in progress) */}
+      {(unfinalized.venue || unfinalized.speakers || unfinalized.schedule) && (
+        <div className="bg-amber-500/10 border border-amber-500/20 rounded-2xl p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 text-fg animate-fadeIn">
+          <div className="flex items-center gap-3.5">
+            <span className="w-10 h-10 rounded-xl bg-amber-500/20 text-amber-600 flex items-center justify-center shrink-0">
+              <span className="material-symbols-outlined text-[20px]">info</span>
+            </span>
+            <div>
+              <span className="font-geist font-bold text-xs sm:text-sm text-fg block">
+                Event Details in Progress
+              </span>
+              <p className="text-xs text-fg/60 mt-0.5">
+                {[
+                  unfinalized.venue && 'Venue to be announced',
+                  unfinalized.speakers && 'Speakers coming soon',
+                  unfinalized.schedule && 'Schedule being finalized'
+                ].filter(Boolean).join(' · ')}
+              </p>
+            </div>
+          </div>
+          {isOwner && onEditEvent && (
+            <button
+              type="button"
+              onClick={() => onEditEvent(event)}
+              className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer flex items-center gap-1.5 shadow-xs"
+            >
+              <span className="material-symbols-outlined text-[16px]">edit</span>
+              <span>Finalize Event Details</span>
+            </button>
+          )}
         </div>
       )}
 
@@ -335,68 +384,94 @@ export const EventDetailsView = ({
                     ))}
                   </div>
                 ) : (
-                  <p className="text-xs text-gray-400 italic">Speakers will be announced shortly by the organizer.</p>
+                  <div className="p-8 text-center bg-gray-50 border border-dashed border-gray-200 rounded-2xl space-y-3">
+                    <span className="material-symbols-outlined text-gray-400 text-3xl">record_voice_over</span>
+                    <h4 className="font-geist text-sm font-semibold text-gray-700">Speakers to be announced</h4>
+                    <p className="text-xs text-gray-500 max-w-sm mx-auto">
+                      Keynote speakers and panelists will be announced soon. Registered attendees will be notified when the lineup is published.
+                    </p>
+                    {isOwner && onEditEvent && (
+                      <button
+                        type="button"
+                        onClick={() => onEditEvent(event)}
+                        className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-all cursor-pointer inline-flex items-center gap-1.5"
+                      >
+                        <span className="material-symbols-outlined text-sm">add</span>
+                        <span>Add Speakers</span>
+                      </button>
+                    )}
+                  </div>
                 )}
               </div>
             )}
 
             {activeTab === 'schedule' && (
-              <div className="space-y-4 bg-white p-8 rounded-[2.5rem] border border-gray-100">
-                <h3 className="font-geist text-lg font-bold text-black">Event Agenda & Timeline</h3>
-                {event.schedule && event.schedule.length > 0 ? (
-                  <div className="space-y-3 relative pl-4 border-l-2 border-black">
-                    {event.schedule.map((item, idx) => (
-                      <div key={idx} className="relative">
-                        <div className="absolute -left-[21px] top-1 w-2.5 h-2.5 rounded-full bg-black" />
-                        <div className="p-4 bg-gray-50 border border-gray-100 rounded-2xl space-y-1">
-                          <span className="font-geist text-xs font-bold text-blue-600">{item.time}</span>
-                          <h4 className="font-geist text-sm font-bold text-black">{item.title}</h4>
-                          {item.description && <p className="font-inter text-xs text-gray-500">{item.description}</p>}
-                          {item.speaker && <p className="font-inter text-xs font-bold text-black">Presenter: {item.speaker}</p>}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-xs text-gray-400 italic">Detailed schedule will be released closer to the event date.</p>
-                )}
+              <div className="space-y-4 bg-white p-6 sm:p-8 rounded-[2.5rem] border border-gray-100">
+                <ScheduleManager
+                  schedule={event.schedule || []}
+                  onChange={isOwner && onUpdateSchedule ? (newSch) => onUpdateSchedule(event.id, newSch) : undefined}
+                  eventDate={event.startDate}
+                  eventSpeakers={event.speakers || []}
+                  isOwner={isOwner}
+                  readOnly={!isOwner}
+                />
               </div>
             )}
 
             {activeTab === 'venue' && (
               <div className="space-y-4 bg-white p-8 rounded-[2.5rem] border border-gray-100">
                 <h3 className="font-geist text-lg font-bold text-black">Venue & Location Details</h3>
-                <div className="space-y-4">
-                  <div className="flex items-start gap-3">
-                    <span className="text-2xl">📍</span>
-                    <div>
-                      <h4 className="font-geist font-bold text-black text-base">
-                        {event.venueDetails?.name || event.location}
-                      </h4>
-                      <p className="font-inter text-xs text-gray-500 mt-0.5">
-                        {event.venueDetails?.address || `${event.location}, ${event.city}`}
-                      </p>
+                {unfinalized.venue ? (
+                  <div className="p-8 text-center bg-gray-50 border border-dashed border-gray-200 rounded-2xl space-y-3">
+                    <span className="material-symbols-outlined text-gray-400 text-3xl">apartment</span>
+                    <h4 className="font-geist text-sm font-semibold text-gray-700">Venue to be announced</h4>
+                    <p className="text-xs text-gray-500 max-w-sm mx-auto">
+                      The exact venue in {event.city || 'the host city'} will be confirmed soon. Registered attendees will be automatically notified once the location is confirmed.
+                    </p>
+                    {isOwner && onEditEvent && (
+                      <button
+                        type="button"
+                        onClick={() => onEditEvent(event)}
+                        className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-all cursor-pointer inline-flex items-center gap-1.5"
+                      >
+                        <span className="material-symbols-outlined text-sm">add_location_alt</span>
+                        <span>Set Venue</span>
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <div className="flex items-start gap-3">
+                      <span className="text-2xl">📍</span>
+                      <div>
+                        <h4 className="font-geist font-bold text-black text-base">
+                          {event.venueDetails?.name || event.location}
+                        </h4>
+                        <p className="font-inter text-xs text-gray-500 mt-0.5">
+                          {event.venueDetails?.address || `${event.location}, ${event.city}`}
+                        </p>
+                      </div>
+                    </div>
+
+                    {event.venueDetails?.facilities && (
+                      <div className="flex flex-wrap gap-2 pt-2 border-t border-gray-100">
+                        {event.venueDetails.facilities.map((fac, i) => (
+                          <span key={i} className="px-3 py-1 bg-gray-50 border border-gray-200 text-xs font-bold text-gray-600 rounded-full">
+                            {fac}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Simulated Map Preview Card */}
+                    <div className="h-44 bg-gray-100 rounded-2xl overflow-hidden relative flex items-center justify-center border border-gray-200">
+                      <div className="bg-white px-5 py-3 rounded-2xl shadow-sm text-center border border-gray-200 z-10">
+                        <p className="font-geist text-xs font-bold text-black">📍 {event.location}</p>
+                        <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">GPS Location Verified</span>
+                      </div>
                     </div>
                   </div>
-
-                  {event.venueDetails?.facilities && (
-                    <div className="flex flex-wrap gap-2 pt-2 border-t border-gray-100">
-                      {event.venueDetails.facilities.map((fac, i) => (
-                        <span key={i} className="px-3 py-1 bg-gray-50 border border-gray-200 text-xs font-bold text-gray-600 rounded-full">
-                          {fac}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* Simulated Map Preview Card */}
-                  <div className="h-44 bg-gray-100 rounded-2xl overflow-hidden relative flex items-center justify-center border border-gray-200">
-                    <div className="bg-white px-5 py-3 rounded-2xl shadow-sm text-center border border-gray-200 z-10">
-                      <p className="font-geist text-xs font-bold text-black">📍 {event.location}</p>
-                      <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">GPS Location Verified</span>
-                    </div>
-                  </div>
-                </div>
+                )}
               </div>
             )}
           </div>

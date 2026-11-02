@@ -7,6 +7,7 @@ export const EventAnalyticsView = ({
   tickets = [],
   onBack,
   onSelectEvent,
+  onEditEvent,
   onCheckInTicket,
   onUpdateTicket,
   onUpdateEventExpenses,
@@ -276,6 +277,11 @@ export const EventAnalyticsView = ({
           >
             {currentEvent.status}
           </span>
+          {onEditEvent && (
+            <Button variant="secondary" icon="edit" className="!px-3 !py-1 !text-xs" onClick={() => onEditEvent(currentEvent)}>
+              {currentEvent.status === 'draft' ? 'Edit Draft' : 'Edit Event'}
+            </Button>
+          )}
           {onSelectEvent && (
             <Button variant="ghost" className="!px-3 !py-1 !text-xs" onClick={() => onSelectEvent(currentEvent)}>
               View Public Page
