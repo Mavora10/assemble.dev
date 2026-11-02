@@ -10,6 +10,6 @@ class TicketBookRequest(BaseModel):
     phone: Optional[str] = None
 
 class TicketCheckInRequest(BaseModel):
-    ticketId: str
-    eventId: str
-
+    ticketId: Optional[str] = None
+    ticketCode: Optional[str] = None
+    eventId: Optional[str] = None

@@ -21,6 +21,7 @@
 11. [Event Photo Storage & AI Face Match](#11-event-photo-storage--ai-face-match)
 12. [Gamification & Rewards Engine](#12-gamification--rewards-engine)
 13. [Gemini AI Intelligence & Analytics](#13-gemini-ai-intelligence--analytics)
+14. [Attendee Notifications](#14-attendee-notifications)
 
 ---
 
@@ -158,13 +159,44 @@
   ```
 * **Response (201 Created):** Newly created event record.
 
-### 2.4 `PATCH /events/{event_id}`
-* **Description:** Update event details, status (`draft`, `published`, `completed`, `cancelled`).
+### 2.4 `PUT /events/{event_id}`
+* **Description:** Update an existing draft or published event. Enforces organizer ownership check (returns 403 Forbidden for unauthorized users). Automatically detects finalized details changes (venue confirmation, new speakers, schedule updates) and triggers notifications to all registered attendees.
+* **Headers:** `Authorization: Bearer <token>`
+* **Request Body:** Partial or complete `EventUpdateRequest` JSON object.
+* **Response (200 OK):** Updated event record.
 
-### 2.5 `DELETE /events/{event_id}`
+### 2.5 `PATCH /events/{event_id}`
+* **Description:** Partial update alias for `PUT /events/{event_id}` (e.g. updating publishing status from `draft` to `published`).
+
+### 2.6 `PUT /events/{event_id}/schedule`
+* **Description:** Update the interactive agenda / schedule session items for an event. Enforces organizer ownership check. Automatically triggers attendee notifications when the schedule is published or changed.
+* **Headers:** `Authorization: Bearer <token>`
+* **Request Body:**
+  ```json
+  {
+    "schedule": [
+      {
+        "title": "Keynote: The Future of Agentic AI",
+        "date": "2027-04-15",
+        "startTime": "09:30 AM",
+        "endTime": "10:30 AM",
+        "location": "Main Auditorium",
+        "description": "Opening keynote exploring multi-agent architectures."
+      }
+    ]
+  }
+  ```
+* **Response (200 OK):** Updated event record.
+
+### 2.7 `GET /events/{event_id}/attendees`
+* **Description:** Fetch registered attendees and ticket details for an event. Strictly restricted to the event organizer or platform admin (returns 403 Forbidden for attendees, sponsors, or other organizers).
+* **Headers:** `Authorization: Bearer <token>`
+* **Response (200 OK):** Array of ticket holder records.
+
+### 2.8 `DELETE /events/{event_id}`
 * **Description:** Soft-delete or archive an event.
 
-### 2.6 `GET /events/{event_id}/finances`
+### 2.9 `GET /events/{event_id}/finances`
 * **Description:** Fetch budget breakdown, ticket revenue, sponsorship funds raised, and expense list.
 * **Response (200 OK):**
   ```json
@@ -180,7 +212,7 @@
   }
   ```
 
-### 2.7 `POST /events/{event_id}/expenses`
+### 2.10 `POST /events/{event_id}/expenses`
 * **Description:** Log a new expense against an event budget.
 
 ---
@@ -498,6 +530,48 @@
 
 ---
 
+## 14. Attendee Notifications
+*Powers: `NotificationBell.jsx`, `AttendeeDashboardView.jsx` ("Event updates" tab), and automated post-publication change alerts.*
+
+### 14.1 `GET /notifications`
+* **Description:** Retrieve all notifications for the authenticated user, sorted with newest first.
+* **Headers:** `Authorization: Bearer <token>`
+* **Query Params:** `limit` (default: 50)
+* **Response (200 OK):** Array of notification objects.
+  ```json
+  [
+    {
+      "id": "uuid",
+      "user_id": "uuid",
+      "user_email": "attendee@example.com",
+      "event_id": "uuid",
+      "event_title": "Global AI Summit 2027",
+      "type": "event_update",
+      "title": "Update on Global AI Summit 2027",
+      "message": "Venue confirmed: Moscone Center · Speakers announced: Sarah Connor · Agenda published: 4 sessions added",
+      "changes": {
+        "venue": "Moscone Center",
+        "speakers": ["Sarah Connor"],
+        "scheduleCount": 4
+      },
+      "read": false,
+      "created_at": "2027-04-01T10:00:00Z"
+    }
+  ]
+  ```
+
+### 14.2 `PATCH /notifications/{notification_id}/read`
+* **Description:** Mark an individual notification as read.
+* **Headers:** `Authorization: Bearer <token>`
+* **Response (200 OK):** `{"success": true}`
+
+### 14.3 `POST /notifications/read-all`
+* **Description:** Mark all notifications for the authenticated attendee as read.
+* **Headers:** `Authorization: Bearer <token>`
+* **Response (200 OK):** `{"success": true, "count": 3}`
+
+---
+
 ## Summary Matrix
 
 | Section | Route Prefix | Primary Tables Touched | Real-Time / AI |
@@ -515,4 +589,5 @@
 | **11. Photos** | `/api/v1/photos` | `event_photos` *(new)* | **AI Face Matching** |
 | **12. Rewards** | `/api/v1/rewards` | `user_rewards`, `badges` *(new)* | Gamification XP |
 | **13. AI** | `/api/v1/ai` | Supabase Logs | **Google Gemini SDK** |
+| **14. Notifications**| `/api/v1/notifications` | `notifications` | Automatic Event Diff Alerts |
 

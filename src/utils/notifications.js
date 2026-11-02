@@ -4,15 +4,67 @@
  * are added or updated post-publication.
  */
 
+import { notificationService } from '../services/notificationService';
+
 const STORAGE_KEY = 'assemble_notifications';
+let isSyncing = false;
 
 /**
  * Get all notifications for a specific user.
+ * Returns cached notifications immediately and asynchronously syncs with backend.
  * @param {string} userEmail
  * @returns {Array} List of notifications sorted by creation date descending.
  */
 export function getNotifications(userEmail) {
   if (!userEmail) return [];
+
+  // Trigger background sync with backend if authenticated
+  if (!isSyncing && typeof window !== 'undefined') {
+    isSyncing = true;
+    notificationService.getNotifications()
+      .then(({ data }) => {
+        if (data && Array.isArray(data) && data.length > 0) {
+          try {
+            const raw = localStorage.getItem(STORAGE_KEY);
+            const local = raw ? JSON.parse(raw) : [];
+            const localIds = new Set(local.map((n) => String(n.id)));
+
+            const mapped = data.map((b) => ({
+              id: String(b.id),
+              recipientEmail: b.user_email || userEmail,
+              eventId: b.event_id,
+              eventTitle: b.event_title || 'Event Update',
+              title: b.title || 'Event Update',
+              summary: b.message || '',
+              changesList: b.changes ? Object.keys(b.changes).map(k => `${k}: ${b.changes[k]}`) : [],
+              details: b.changes || {},
+              createdAt: b.created_at || new Date().toISOString(),
+              read: Boolean(b.read),
+            }));
+
+            let hasNew = false;
+            mapped.forEach((item) => {
+              if (!localIds.has(item.id)) {
+                local.push(item);
+                hasNew = true;
+              }
+            });
+
+            if (hasNew) {
+              localStorage.setItem(STORAGE_KEY, JSON.stringify(local));
+              window.dispatchEvent(new CustomEvent('assemble_notifications_updated'));
+            }
+          } catch (e) {
+            console.warn('Error merging backend notifications', e);
+          }
+        }
+      })
+      .catch(() => {})
+      .finally(() => {
+        isSyncing = false;
+      });
+  }
+
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     const all = raw ? JSON.parse(raw) : [];
@@ -34,9 +86,12 @@ export function markNotificationAsRead(notifId) {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return;
     const all = JSON.parse(raw);
-    const updated = all.map((n) => (n.id === notifId ? { ...n, read: true } : n));
+    const updated = all.map((n) => (String(n.id) === String(notifId) ? { ...n, read: true } : n));
     localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
     window.dispatchEvent(new CustomEvent('assemble_notifications_updated'));
+
+    // Sync to backend if uuid
+    notificationService.markAsRead(notifId).catch(() => {});
   } catch (err) {
     console.error('Failed to mark notification read', err);
   }
@@ -57,6 +112,9 @@ export function markAllNotificationsAsRead(userEmail) {
     );
     localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
     window.dispatchEvent(new CustomEvent('assemble_notifications_updated'));
+
+    // Sync to backend
+    notificationService.markAllAsRead().catch(() => {});
   } catch (err) {
     console.error('Failed to mark all notifications read', err);
   }

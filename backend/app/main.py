@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
-from app.routers import auth, events, tickets, communities, venues, speakers, sponsorships, merchandise, tasks
+from app.routers import auth, events, tickets, communities, venues, speakers, sponsorships, merchandise, tasks, notifications
 from app.websockets import community_room
 
 app = FastAPI(
@@ -30,6 +30,7 @@ app.include_router(venues.router, prefix="/api/v1", tags=["7. Venues Marketplace
 app.include_router(speakers.router, prefix="/api/v1", tags=["8. Speakers Marketplace & Lineups"])
 app.include_router(merchandise.router, prefix="/api/v1", tags=["9. Merchandise & Swag Store"])
 app.include_router(tasks.router, prefix="/api/v1", tags=["10. Organizer Task Management"])
+app.include_router(notifications.router, prefix="/api/v1/notifications", tags=["11. Attendee Notifications"])
 
 @app.get("/health")
 def health_check():

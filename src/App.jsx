@@ -985,21 +985,71 @@ export function App() {
 
     // Show pass modal
     setViewedTicket(newTicket);
+
+    // Call backend bookTicket API asynchronously to persist in database
+    ticketService.bookTicket({
+      eventId: event.id,
+      ticketTierName: finalTierName || 'General Admission',
+      price: finalPrice,
+      userName: applicationDetails?.fullName || (currentUser ? currentUser.name : 'Guest User'),
+      userEmail: applicationDetails?.email || (currentUser ? currentUser.email : 'guest@example.com'),
+      phone: applicationDetails?.phone || (currentUser?.phone || ''),
+    }).then(({ data, error }) => {
+      if (error) {
+        console.warn('Backend bookTicket notice:', error);
+      } else if (data?.ticket) {
+        const backendCode = data.ticket.ticket_id;
+        if (backendCode) {
+          setTickets((curr) =>
+            curr.map((t) => (t.ticketId === newTicketId ? { ...t, ticketId: backendCode, ticket_id: backendCode } : t))
+          );
+        }
+      }
+    }).catch((err) => console.warn('Backend bookTicket error:', err));
   };
 
-  // Handler: Save / Publish Created Event (Upsert with ownership check)
+  // Handler: Save / Publish Created Event (Upsert with ownership check & backend API call)
   const handleSaveEvent = (newEvent) => {
+    const existingIndex = events.findIndex((e) => e.id === newEvent.id);
+    const isExisting = existingIndex >= 0;
+
+    if (isExisting) {
+      const existing = events[existingIndex];
+      if (!canEditEvent(existing, currentUser)) {
+        console.warn('Unauthorized edit attempt blocked');
+        return;
+      }
+      // Call backend API update
+      eventService.updateEvent(newEvent.id, newEvent)
+        .then(({ data, error }) => {
+          if (error) {
+            console.warn('Backend updateEvent notice:', error);
+          } else if (data) {
+            setEvents((currentEvents) =>
+              currentEvents.map((e) => (e.id === newEvent.id ? { ...e, ...data } : e))
+            );
+          }
+        })
+        .catch((err) => console.warn('Backend updateEvent fetch error:', err));
+    } else {
+      // Call backend API create
+      eventService.createEvent(newEvent)
+        .then(({ data, error }) => {
+          if (error) {
+            console.warn('Backend createEvent notice:', error);
+          } else if (data && data.id) {
+            setEvents((currentEvents) =>
+              currentEvents.map((e) => (e.id === newEvent.id ? { ...e, ...data } : e))
+            );
+          }
+        })
+        .catch((err) => console.warn('Backend createEvent fetch error:', err));
+    }
+
     setEvents((prev) => {
-      const existingIndex = prev.findIndex((e) => e.id === newEvent.id);
       let updated;
-      if (existingIndex >= 0) {
-        // Enforce ownership check at the data layer
+      if (isExisting) {
         const existing = prev[existingIndex];
-        if (!canEditEvent(existing, currentUser)) {
-          console.warn('Unauthorized edit attempt blocked');
-          return prev;
-        }
-        // Update in place, preserving existing registrations, checkedIn, revenue, tickets
         const mergedEvent = {
           ...existing,
           ...newEvent,
@@ -1012,7 +1062,6 @@ export function App() {
 
         // Notify registered attendees when finalized details (venue, speakers, schedule) change
         notifyRegisteredAttendees(existing, mergedEvent, tickets);
-
         updated = prev.map((e) => (e.id === newEvent.id ? mergedEvent : e));
       } else {
         updated = [newEvent, ...prev];
@@ -1026,16 +1075,27 @@ export function App() {
 
   // Handler: Update Schedule directly from EventDetails or ScheduleManager
   const handleUpdateEventSchedule = (eventId, newSchedule) => {
+    const target = events.find((e) => e.id === eventId);
+    if (!target) return;
+    if (!canEditEvent(target, currentUser)) {
+      console.warn('Unauthorized schedule update attempt blocked');
+      return;
+    }
+
+    // Call backend API
+    eventService.updateEventSchedule(eventId, newSchedule)
+      .then(({ data, error }) => {
+        if (error) {
+          console.warn('Backend updateEventSchedule notice:', error);
+        }
+      })
+      .catch((err) => console.warn('Backend updateEventSchedule error:', err));
+
     setEvents((prev) => {
-      const target = prev.find((e) => e.id === eventId);
-      if (!target) return prev;
-      if (!canEditEvent(target, currentUser)) {
-        console.warn('Unauthorized schedule update attempt blocked');
-        return prev;
-      }
-      const updatedEvent = { ...target, schedule: newSchedule };
-      // Notify registered attendees about schedule update
-      notifyRegisteredAttendees(target, updatedEvent, tickets);
+      const existing = prev.find((e) => e.id === eventId);
+      if (!existing) return prev;
+      const updatedEvent = { ...existing, schedule: newSchedule };
+      notifyRegisteredAttendees(existing, updatedEvent, tickets);
 
       const updated = prev.map((e) =>
         e.id === eventId ? updatedEvent : e
@@ -1048,14 +1108,19 @@ export function App() {
   // Handler: Door Check-In Ticket
   const handleCheckInTicket = (ticketId) => {
     const targetTicket = tickets.find(
-      (t) => t.ticketId.toLowerCase() === ticketId.toLowerCase()
+      (t) => (t.ticketId || t.ticket_id || '').toLowerCase() === ticketId.toLowerCase()
     );
 
     if (!targetTicket) return false;
 
+    // Call backend check-in API
+    ticketService.checkInTicket(ticketId).catch((err) => {
+      console.warn('Backend check-in notice:', err);
+    });
+
     // Mark ticket checked-in
     const updatedTickets = tickets.map((t) =>
-      t.ticketId.toLowerCase() === ticketId.toLowerCase()
+      (t.ticketId || t.ticket_id || '').toLowerCase() === ticketId.toLowerCase()
         ? { ...t, status: 'checked-in' }
         : t
     );
@@ -1065,7 +1130,7 @@ export function App() {
     // Update event checked in count
     const updatedEvents = events.map((e) =>
       e.id === targetTicket.eventId
-        ? { ...e, checkedInCount: e.checkedInCount + 1 }
+        ? { ...e, checkedInCount: (e.checkedInCount || 0) + 1 }
         : e
     );
     setEvents(updatedEvents);

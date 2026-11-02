@@ -1,6 +1,8 @@
 from typing import Optional
 from fastapi import Header, HTTPException, status
+from jose import jwt
 from app.services.supabase_client import supabase
+from app.config import settings
 
 
 def get_supabase_client():
@@ -12,7 +14,7 @@ async def get_current_user_optional(
     authorization: Optional[str] = Header(None)
 ) -> Optional[dict]:
     """
-    Extracts Bearer token from header and validates with Supabase Auth or returns None.
+    Extracts Bearer token from header and validates with custom JWT or Supabase Auth.
     """
     if not authorization:
         return None
@@ -22,11 +24,28 @@ async def get_current_user_optional(
         return None
     
     token = parts[1]
+    
+    # 1. Try custom FastAPI JWT token
+    try:
+        payload = jwt.decode(token, settings.JWT_SECRET, algorithms=["HS256"])
+        if payload and payload.get("sub"):
+            return {
+                "id": payload.get("sub"),
+                "sub": payload.get("sub"),
+                "email": payload.get("email"),
+                "role": payload.get("role", "attendee"),
+                "user_metadata": {"role": payload.get("role", "attendee")},
+            }
+    except Exception:
+        pass
+
+    # 2. Fallback to Supabase Auth verification
     try:
         user_response = supabase.auth.get_user(token)
         if user_response and user_response.user:
             return {
                 "id": user_response.user.id,
+                "sub": user_response.user.id,
                 "email": user_response.user.email,
                 "role": user_response.user.role,
                 "user_metadata": user_response.user.user_metadata,

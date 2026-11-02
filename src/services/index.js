@@ -8,3 +8,4 @@ export { speakerService } from './speakerService';
 export { sponsorshipService } from './sponsorshipService';
 export { merchandiseService } from './merchandiseService';
 export { taskService } from './taskService';
+export { notificationService } from './notificationService';

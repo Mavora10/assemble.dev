@@ -33,11 +33,36 @@ export const eventService = {
   },
 
   /**
-   * Create and publish a new event
+   * Create and publish/save a new event
    */
   async createEvent(eventPayload) {
     const res = await api.post('/events', eventPayload);
     return { data: res.data, error: res.error };
+  },
+
+  /**
+   * Update an existing draft or published event
+   * Enforces organizer ownership on backend and notifies attendees on finalized changes
+   */
+  async updateEvent(eventId, eventPayload) {
+    const res = await api.put(`/events/${eventId}`, eventPayload);
+    return { data: res.data, error: res.error };
+  },
+
+  /**
+   * Update schedule/agenda for an event
+   */
+  async updateEventSchedule(eventId, schedule) {
+    const res = await api.put(`/events/${eventId}/schedule`, { schedule });
+    return { data: res.data, error: res.error };
+  },
+
+  /**
+   * Retrieve registered attendees for an event (organizer-only)
+   */
+  async getEventAttendees(eventId) {
+    const res = await api.get(`/events/${eventId}/attendees`);
+    return { data: res.data || [], error: res.error };
   },
 
   /**
