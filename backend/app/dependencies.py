@@ -1,30 +1,18 @@
 from typing import Optional
 from fastapi import Header, HTTPException, status
-from supabase import create_client, Client
-from app.config import settings
-
-# Global Supabase client
-_supabase_client: Optional[Client] = None
+from app.services.supabase_client import supabase
 
 
-def get_supabase_client() -> Client:
+def get_supabase_client():
     """Returns singleton Supabase client instance."""
-    global _supabase_client
-    if _supabase_client is None:
-        if not settings.supabase_url or not settings.supabase_key:
-            raise RuntimeError(
-                "SUPABASE_URL and SUPABASE_KEY must be set in environment variables."
-            )
-        _supabase_client = create_client(settings.supabase_url, settings.supabase_key)
-    return _supabase_client
+    return supabase
 
 
 async def get_current_user_optional(
     authorization: Optional[str] = Header(None)
 ) -> Optional[dict]:
     """
-    Extracts Bearer token from header and validates with Supabase Auth.
-    Returns None if no token or invalid in development mode.
+    Extracts Bearer token from header and validates with Supabase Auth or returns None.
     """
     if not authorization:
         return None
@@ -34,9 +22,8 @@ async def get_current_user_optional(
         return None
     
     token = parts[1]
-    client = get_supabase_client()
     try:
-        user_response = client.auth.get_user(token)
+        user_response = supabase.auth.get_user(token)
         if user_response and user_response.user:
             return {
                 "id": user_response.user.id,

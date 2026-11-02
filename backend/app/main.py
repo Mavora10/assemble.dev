@@ -1,57 +1,36 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
-from app.routers import (
-    sponsorships,
-    venues,
-    speakers,
-    merchandise,
-    tasks,
-)
+from app.routers import auth, events, tickets, communities
+from app.websockets import community_room
 
 app = FastAPI(
-    title=settings.app_name,
-    version="1.0.0",
-    description="Assemble.dev Event & Community Intelligence Platform — FastAPI + Supabase Backend",
-    docs_url="/docs",
-    redoc_url="/redoc",
+    title="Event Horizon API",
+    description="Python FastAPI backend powered by Supabase PostgreSQL",
+    version="1.0.0"
 )
 
-# CORS configuration
+# CORS setup for React frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allows all origins for local dev & Vite preview
+    allow_origins=[settings.FRONTEND_URL, "http://localhost:3000", "http://localhost:5173", "http://127.0.0.1:3000", "http://127.0.0.1:5173"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Register routers under /api/v1 prefix per API_SPECIFICATION.md
-API_PREFIX = "/api/v1"
-
-app.include_router(sponsorships.router, prefix=API_PREFIX)
-app.include_router(venues.router, prefix=API_PREFIX)
-app.include_router(speakers.router, prefix=API_PREFIX)
-app.include_router(merchandise.router, prefix=API_PREFIX)
-app.include_router(tasks.router, prefix=API_PREFIX)
-
-
-@app.get("/")
-async def root():
-    return {
-        "service": settings.app_name,
-        "status": "online",
-        "docs": "/docs",
-        "endpoints": {
-            "sponsorships": f"{API_PREFIX}/sponsorships",
-            "venues": f"{API_PREFIX}/venues",
-            "speakers": f"{API_PREFIX}/speakers",
-            "merchandise": f"{API_PREFIX}/merchandise",
-            "tasks": f"{API_PREFIX}/events/{{event_id}}/tasks",
-        },
-    }
-
+# Register routers for the first 5 modules
+app.include_router(auth.router, prefix="/api/v1/auth", tags=["1. Authentication & Roles"])
+app.include_router(events.router, prefix="/api/v1/events", tags=["2. Events & Budgeting"])
+app.include_router(tickets.router, prefix="/api/v1/tickets", tags=["3. Tickets & Check-In"])
+app.include_router(communities.router, prefix="/api/v1/communities", tags=["4. Communities & Discussions"])
+app.include_router(community_room.router, tags=["5. Real-Time Community Room (WebSockets)"])
 
 @app.get("/health")
-async def health_check():
-    return {"status": "healthy", "environment": settings.environment}
+def health_check():
+    return {
+        "status": "healthy",
+        "service": "Event Horizon FastAPI Backend",
+        "database": "Supabase PostgreSQL"
+    }
+

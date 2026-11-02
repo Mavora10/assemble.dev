@@ -1,1 +1,2 @@
-"""Assemble.dev Backend Application Package."""
+# Event Horizon Backend App
+
