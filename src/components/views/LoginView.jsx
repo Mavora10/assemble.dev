@@ -33,27 +33,24 @@ export const LoginView = ({ navigate, onLoginSuccess }) => {
 
     setIsLoading(true);
 
-    // --- API-first login ---
+    // --- 1. Attempt Backend API Login First ---
     try {
-      const { user, error: apiError, isNetworkError } = await authService.signInUser({ email: email.trim(), password });
+      const { user, error: apiError, isNetworkError } = await authService.signInUser({
+        email: email.trim(),
+        password,
+      });
+
       if (user && !apiError) {
         onLoginSuccess(user);
         setIsLoading(false);
         return;
       }
-      // If backend is down, fall through to local auth
-      if (!isNetworkError && apiError) {
-        // Real auth error from server (wrong password, etc.)
-        setFieldErrors({ email: apiError, password: apiError });
-        setError(apiError);
-        setIsLoading(false);
-        return;
-      }
     } catch (_) {
-      // Network error — fall through to local
+      // Network or fetch error — seamlessly fall through to local fallback
     }
 
-    // --- Offline / demo fallback ---
+    // --- 2. Fallback to Local Storage / Demo Users ---
+    // If the account was created while the backend was offline, or is a demo account
     const localUsers = JSON.parse(localStorage.getItem('assemble_users') || '[]');
 
     const defaultUsers = [
@@ -74,6 +71,18 @@ export const LoginView = ({ navigate, onLoginSuccess }) => {
     setIsLoading(false);
 
     if (matchedUser) {
+      // Seamlessly sync to backend database in background if not already there
+      authService
+        .signUpUser({
+          email: matchedUser.email,
+          password: matchedUser.password,
+          name: matchedUser.name || 'User',
+          phone: matchedUser.phone || '',
+          city: matchedUser.location || matchedUser.city || '',
+          initialRole: matchedUser.role || 'attendee',
+        })
+        .catch(() => {});
+
       onLoginSuccess(matchedUser);
     } else {
       setFieldErrors({

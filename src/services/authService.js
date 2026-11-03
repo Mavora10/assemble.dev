@@ -20,7 +20,7 @@ export const authService = {
     });
 
     if (res.error) {
-      return { user: null, token: null, error: res.error };
+      return { user: null, token: null, error: res.error, isNetworkError: res.isNetworkError };
     }
 
     if (res.data?.token) {
@@ -44,7 +44,7 @@ export const authService = {
     const res = await api.post('/auth/login', { email, password });
     
     if (res.error) {
-      return { user: null, token: null, error: res.error };
+      return { user: null, token: null, error: res.error, isNetworkError: res.isNetworkError };
     }
 
     if (res.data?.token) {
