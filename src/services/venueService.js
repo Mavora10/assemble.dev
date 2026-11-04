@@ -49,10 +49,27 @@ export const venueService = {
   },
 
   /**
+   * Fetch all venue bookings (for host or organizer)
+   */
+  async getBookings(filters = {}) {
+    const params = {};
+    if (filters.venueId) params.venueId = filters.venueId;
+    if (filters.eventId) params.eventId = filters.eventId;
+    if (filters.organizerId) params.organizerId = filters.organizerId;
+    if (filters.status) params.status = filters.status;
+
+    const res = await api.get('/venues/bookings', params);
+    if (res.error) {
+      return { data: [], error: res.error };
+    }
+    return { data: res.data || [], error: null };
+  },
+
+  /**
    * Update status of a venue booking (e.g. confirmed, declined, completed)
    */
   async updateBookingStatus(bookingId, status) {
-    const res = await api.put(`/venues/bookings/${bookingId}/status`, { status });
+    const res = await api.patch(`/venues/bookings/${bookingId}/status`, { status });
     return { data: res.data, error: res.error };
   },
 };

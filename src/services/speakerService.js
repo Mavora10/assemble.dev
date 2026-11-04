@@ -23,6 +23,14 @@ export const speakerService = {
   },
 
   /**
+   * Register a new speaker profile in the marketplace
+   */
+  async registerSpeaker(speakerPayload) {
+    const res = await api.post('/speakers', speakerPayload);
+    return { data: res.data, error: res.error };
+  },
+
+  /**
    * Get single speaker details
    */
   async getSpeakerById(speakerId) {
@@ -41,8 +49,8 @@ export const speakerService = {
   /**
    * Get invitations received by the current speaker or sent by organizer
    */
-  async getMyInvitations() {
-    const res = await api.get('/speakers/invitations');
+  async getMyInvitations(filters = {}) {
+    const res = await api.get('/speakers/invitations', filters);
     if (res.error) {
       return { data: [], error: res.error };
     }
@@ -53,7 +61,7 @@ export const speakerService = {
    * Accept or decline a speaking invitation
    */
   async updateInvitationStatus(inviteId, status) {
-    const res = await api.put(`/speakers/invitations/${inviteId}`, { status });
+    const res = await api.patch(`/speakers/invitations/${inviteId}`, { status });
     return { data: res.data, error: res.error };
   },
 

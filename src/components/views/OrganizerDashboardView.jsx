@@ -5,6 +5,7 @@ import { SponsorshipSection } from './SponsorshipSection';
 import { VenueMarketplaceView } from './VenueMarketplaceView';
 import { SpeakerMarketplaceView } from './SpeakerMarketplaceView';
 import { EventAnalyticsView } from './EventAnalyticsView';
+import { EventTasksSection } from './EventTasksSection';
 import { isEventOwner } from '../../utils/eventPermissions';
 
 const STATUS_STYLES = {
@@ -141,6 +142,7 @@ export const OrganizerDashboardView = ({
         }}
         items={[
           { id: 'overview', label: 'Overview & events', icon: 'dashboard' },
+          { id: 'tasks', label: 'Milestones & tasks', icon: 'checklist' },
           { id: 'goodies', label: 'Goodies & merch', icon: 'local_mall' },
           { id: 'sponsors', label: 'Sponsorships', icon: 'handshake' },
           { id: 'venues', label: 'Venues', icon: 'domain' },
@@ -309,6 +311,10 @@ export const OrganizerDashboardView = ({
             ))}
           </div>
         </div>
+      )}
+
+      {activeTab === 'tasks' && (
+        <EventTasksSection events={managedEvents} />
       )}
 
       {activeTab === 'goodies' && (

@@ -1,6 +1,6 @@
 import uuid
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from app.dependencies import get_supabase_client
 from app.models.merchandise import MerchandiseOrderCreate
 
@@ -84,6 +84,26 @@ async def get_merchandise_catalog():
     }
 
 
+@router.get("/orders")
+async def get_merchandise_orders(
+    eventId: Optional[str] = Query(None),
+    client=Depends(get_supabase_client),
+):
+    """
+    List merchandise orders, optionally filtered by event ID.
+    """
+    try:
+        query = client.from_("merchandise_orders").select("*")
+        if eventId:
+            query = query.eq("event_id", eventId)
+
+        res = query.order("date", desc=True).execute()
+        return res.data or []
+    except Exception as e:
+        print(f"Notice: Failed to fetch merchandise orders: {e}")
+        return []
+
+
 @router.post("/orders", status_code=status.HTTP_201_CREATED)
 async def create_merchandise_order(
     payload: MerchandiseOrderCreate,
@@ -94,19 +114,17 @@ async def create_merchandise_order(
     Place a bulk swag order for an event.
     """
     try:
-        # Calculate total amount
         total_amount = sum(item.quantity * item.unitPrice for item in payload.items)
-        
-        # Verify event if provided
+
         evt_title = payload.eventTitle
-        if not evt_title:
-            evt_res = client.from_("events").select("title").eq("id", payload.eventId).single().execute()
+        if not evt_title and payload.eventId:
+            evt_res = client.from_("events").select("title").eq("id", payload.eventId).execute()
             if evt_res.data:
-                evt_title = evt_res.data.get("title")
-                
+                evt_title = evt_res.data[0].get("title")
+
         order_id = f"MERCH-{uuid.uuid4().hex[:6].upper()}"
         items_json = [item.model_dump() for item in payload.items]
-        
+
         insert_data = {
             "order_id": order_id,
             "event_id": payload.eventId,
@@ -115,14 +133,14 @@ async def create_merchandise_order(
             "total_amount": total_amount,
             "status": "submitted",
         }
-        
+
         res = client.from_("merchandise_orders").insert(insert_data).execute()
         if not res.data:
             raise HTTPException(status_code=400, detail="Failed to place merchandise order")
-            
+
         order = res.data[0]
         order["shippingAddress"] = payload.shippingAddress
-        
+
         return {
             "message": "Swag order placed successfully into production queue",
             "order": order,
@@ -151,23 +169,22 @@ async def get_merchandise_order(
             query = query.eq("id", order_id)
         else:
             query = query.eq("order_id", order_id)
-            
+
         res = query.execute()
         if not res.data:
             raise HTTPException(status_code=404, detail=f"Order '{order_id}' not found")
-            
+
         order = res.data[0]
-        
-        # Add timeline steps
+
         status_steps = ["submitted", "confirmed", "in-production", "quality_check", "shipped", "delivered"]
         current_status = str(order.get("status", "submitted")).lower()
         step_idx = status_steps.index(current_status) if current_status in status_steps else 0
-        
+
         order["trackingTimeline"] = [
             {"step": s, "completed": i <= step_idx, "current": i == step_idx}
             for i, s in enumerate(status_steps)
         ]
-        
+
         return order
     except HTTPException:
         raise

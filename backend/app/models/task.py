@@ -28,7 +28,9 @@ class TaskUpdate(BaseModel):
 
 
 class TaskApplyTemplate(BaseModel):
-    templateName: str = Field(
-        ...,
-        description="Pre-built template: 'Hackathon', 'Tech Conference', or 'Community Meetup'"
-    )
+    templateName: Optional[str] = Field(None, description="Pre-built template: 'Hackathon', 'Tech Conference', or 'Community Meetup'")
+    template_name: Optional[str] = Field(None, description="Alternative field for template name")
+
+    @property
+    def final_template(self) -> str:
+        return self.templateName or self.template_name or "Tech Conference"

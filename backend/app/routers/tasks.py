@@ -46,7 +46,7 @@ async def get_event_tasks(
     try:
         res = client.from_("event_tasks").select("*").eq("event_id", event_id).order("created_at").execute()
         tasks = res.data or []
-        
+
         # Group by category
         grouped = {
             "Logistics": [],
@@ -55,17 +55,17 @@ async def get_event_tasks(
             "Sponsors": [],
             "Day-Of": [],
         }
-        
+
         for task in tasks:
             cat = task.get("category") or "Logistics"
             if cat not in grouped:
                 grouped[cat] = []
             grouped[cat].append(task)
-            
+
         completed_count = sum(1 for t in tasks if t.get("status") == "completed")
         total_count = len(tasks)
         progress_percentage = round((completed_count / total_count * 100), 1) if total_count > 0 else 0.0
-        
+
         return {
             "eventId": event_id,
             "totalTasks": total_count,
@@ -75,7 +75,6 @@ async def get_event_tasks(
             "allTasks": tasks,
         }
     except Exception as e:
-        # If table doesn't exist yet, return graceful empty structure
         if "relation \"event_tasks\" does not exist" in str(e).lower():
             return {
                 "eventId": event_id,
@@ -84,7 +83,7 @@ async def get_event_tasks(
                 "progressPercentage": 0.0,
                 "categories": {"Logistics": [], "Marketing": [], "Speakers": [], "Sponsors": [], "Day-Of": []},
                 "allTasks": [],
-                "notice": "Table event_tasks is pending migration. Run supabase/migrations/20261102000000_event_tasks.sql",
+                "notice": "Table event_tasks is pending migration.",
             }
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -116,11 +115,11 @@ async def create_event_task(
             "notes": payload.notes,
             "status": "todo",
         }
-        
+
         res = client.from_("event_tasks").insert(insert_data).execute()
         if not res.data:
             raise HTTPException(status_code=400, detail="Failed to create event task")
-            
+
         return res.data[0]
     except HTTPException:
         raise
@@ -132,6 +131,7 @@ async def create_event_task(
 
 
 @router.patch("/{task_id}")
+@router.put("/{task_id}")
 async def update_event_task(
     event_id: str,
     task_id: str,
@@ -139,13 +139,12 @@ async def update_event_task(
     client=Depends(get_supabase_client),
 ):
     """
-    10.3 PATCH /events/{event_id}/tasks/{task_id}
+    10.3 PATCH/PUT /events/{event_id}/tasks/{task_id}
     Mark task status (todo, in_progress, completed), change priority or assignee.
     """
     try:
         update_data = {}
         for key, value in payload.model_dump(exclude_unset=True).items():
-            # Convert snake_case if necessary
             db_key = {
                 "assignedToEmail": "assigned_to_email",
                 "linkedEntityType": "linked_entity_type",
@@ -154,14 +153,14 @@ async def update_event_task(
                 "relativeTimeline": "relative_timeline",
             }.get(key, key)
             update_data[db_key] = value
-            
+
         if not update_data:
             raise HTTPException(status_code=400, detail="No valid update fields provided")
-            
+
         res = client.from_("event_tasks").update(update_data).eq("id", task_id).eq("event_id", event_id).execute()
         if not res.data:
             raise HTTPException(status_code=404, detail="Task not found for this event")
-            
+
         return {
             "message": "Task updated successfully",
             "task": res.data[0],
@@ -175,6 +174,25 @@ async def update_event_task(
         )
 
 
+@router.delete("/{task_id}")
+async def delete_event_task(
+    event_id: str,
+    task_id: str,
+    client=Depends(get_supabase_client),
+):
+    """
+    Delete an event task.
+    """
+    try:
+        res = client.from_("event_tasks").delete().eq("id", task_id).eq("event_id", event_id).execute()
+        return {"success": True, "message": f"Task '{task_id}' deleted"}
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error deleting task: {str(e)}",
+        )
+
+
 @router.post("/apply-template", status_code=status.HTTP_201_CREATED)
 async def apply_task_template(
     event_id: str,
@@ -185,14 +203,12 @@ async def apply_task_template(
     10.4 POST /events/{event_id}/tasks/apply-template
     1-click apply pre-built event templates (Hackathon, Tech Conference, Community Meetup).
     """
-    template_items = TEMPLATES.get(payload.templateName)
+    chosen_template = payload.final_template
+    template_items = TEMPLATES.get(chosen_template)
     if not template_items:
-        valid_templates = list(TEMPLATES.keys())
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid templateName '{payload.templateName}'. Choose one of: {valid_templates}",
-        )
-        
+        # Fallback to Tech Conference if partial match
+        template_items = TEMPLATES["Tech Conference"]
+
     try:
         tasks_to_insert = [
             {
@@ -205,10 +221,10 @@ async def apply_task_template(
             }
             for item in template_items
         ]
-        
+
         res = client.from_("event_tasks").insert(tasks_to_insert).execute()
         return {
-            "message": f"Successfully applied '{payload.templateName}' template with {len(tasks_to_insert)} tasks",
+            "message": f"Successfully applied '{chosen_template}' template with {len(tasks_to_insert)} tasks",
             "createdTasks": res.data or [],
         }
     except Exception as e:

@@ -12,9 +12,9 @@ export const taskService = {
   async getEventTasks(eventId) {
     const res = await api.get(`/events/${eventId}/tasks`);
     if (res.error) {
-      return { data: [], error: res.error };
+      return { data: null, error: res.error };
     }
-    return { data: res.data || [], error: null };
+    return { data: res.data, error: null };
   },
 
   /**
@@ -29,7 +29,7 @@ export const taskService = {
    * Update task status, assignee, or priority
    */
   async updateEventTask(eventId, taskId, updates) {
-    const res = await api.put(`/events/${eventId}/tasks/${taskId}`, updates);
+    const res = await api.patch(`/events/${eventId}/tasks/${taskId}`, updates);
     return { data: res.data, error: res.error };
   },
 
@@ -45,7 +45,10 @@ export const taskService = {
    * Pre-populate event with recommended checklist template
    */
   async applyTemplate(eventId, templateName = 'Tech Conference') {
-    const res = await api.post(`/events/${eventId}/tasks/apply-template`, { template_name: templateName });
+    const res = await api.post(`/events/${eventId}/tasks/apply-template`, {
+      templateName,
+      template_name: templateName,
+    });
     return { data: res.data, error: res.error };
   },
 };

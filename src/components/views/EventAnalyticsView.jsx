@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Button, Tabs } from '../ui';
 import * as XLSX from 'xlsx';
+import { EventTasksSection } from './EventTasksSection';
 
 export const EventAnalyticsView = ({
   event,
@@ -478,11 +479,8 @@ export const EventAnalyticsView = ({
                     icon: 'diversity_3',
                     count: evtTickets.filter((t) => t.registrationType === 'Community' || t.registrationType === 'Volunteer + Community').length,
                   },
-                  {
-                    id: 'checkin',
-                    label: `Door check-in ${evtTickets.filter((t) => t.status === 'checked-in').length}/${evtTickets.length}`,
-                    icon: 'qr_code_scanner',
-                  },
+                  { id: 'checkin', label: `Door check-in ${evtTickets.filter((t) => t.status === 'checked-in').length}/${evtTickets.length}`, icon: 'qr_code_scanner' },
+                  { id: 'tasks', label: 'Milestones & tasks', icon: 'checklist' },
                   { id: 'budget', label: 'Budget & expenses', icon: 'payments' },
                 ]}
               />
