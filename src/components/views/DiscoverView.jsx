@@ -49,7 +49,7 @@ export const DiscoverView = ({
         const query = searchTerm.toLowerCase();
         const matchesTitle = evt.title.toLowerCase().includes(query);
         const matchesDesc = evt.description.toLowerCase().includes(query);
-        const matchesOrg = evt.organizer.toLowerCase().includes(query);
+        const matchesOrg = (evt.organizer || '').toLowerCase().includes(query);
         const matchesLocation = evt.location.toLowerCase().includes(query);
         const matchesCity = evt.city.toLowerCase().includes(query);
         if (!matchesTitle && !matchesDesc && !matchesOrg && !matchesLocation && !matchesCity) {

@@ -173,7 +173,7 @@ def list_events(
     isFree: Optional[bool] = None,
     limit: int = 20,
 ):
-    query = supabase.table("events").select("*").limit(limit)
+    query = supabase.table("events").select("*").order("start_date").limit(limit)
     if category and category != "All":
         query = query.eq("category", category)
     if city and city != "All":

@@ -5,6 +5,49 @@ import api from './apiClient';
  * Interfaces with FastAPI endpoints at /api/v1/events
  */
 
+const FALLBACK_IMAGE =
+  'https://images.unsplash.com/photo-1540575467063-178a50c2df87?q=80&w=1200&auto=format&fit=crop';
+
+/** Map a Supabase `events` row (snake_case) to the shape the attendee UI reads. */
+export function mapEvent(row) {
+  if (!row) return row;
+  const price = Number(row.price ?? 0);
+  return {
+    ...row,
+    id: row.id,
+    title: row.title,
+    description: row.description || '',
+    category: row.category || 'Event',
+    format: row.format || 'In-Person',
+    startDate: row.start_date || row.startDate || '',
+    time: row.start_time || row.startTime || row.time || '',
+    endDate: row.end_date || row.endDate || null,
+    location: row.location || 'Venue to be announced',
+    city: row.city || '',
+    organizer: row.organizer_name || row.organizer || 'Organizer',
+    organizerName: row.organizer_name || row.organizerName || row.organizer || 'Organizer',
+    organizerEmail: row.organizer_email || row.organizerEmail || '',
+    organizerId: row.organizer_id || row.organizerId || null,
+    price,
+    isFree: row.is_free ?? row.isFree ?? price === 0,
+    imageUrl: row.image_url || row.imageUrl || FALLBACK_IMAGE,
+    expectedAttendees: row.expected_attendees ?? row.expectedAttendees ?? 0,
+    registeredCount: row.registered_count ?? row.registeredCount ?? 0,
+    checkedInCount: row.checked_in_count ?? row.checkedInCount ?? 0,
+    budget: Number(row.budget ?? 0),
+    revenue: Number(row.revenue ?? 0),
+    ticketTiers: row.ticket_tiers || row.ticketTiers || [],
+    sponsorshipOpportunities: row.sponsorship_opportunities || row.sponsorshipOpportunities || [],
+    speakers: row.speakers || [],
+    schedule: row.schedule || [],
+    venueDetails: row.venue_details || row.venueDetails || null,
+    status: row.status || 'published',
+    volunteersNeeded: row.volunteers_needed ?? row.volunteersNeeded ?? 0,
+    associatedCommunities: row.associated_communities || row.associatedCommunities || [],
+    swagOrder: row.swag_order || row.swagOrder || null,
+  };
+}
+
 export const eventService = {
   /**
    * Fetch list of events with optional search, category, city, and price filtering
@@ -21,7 +64,8 @@ export const eventService = {
     if (res.error) {
       return { data: [], error: res.error };
     }
-    return { data: res.data || [], error: null };
+    const rows = Array.isArray(res.data) ? res.data : [];
+    return { data: rows.map(mapEvent), error: null };
   },
 
   /**
@@ -29,7 +73,7 @@ export const eventService = {
    */
   async getEventById(eventId) {
     const res = await api.get(`/events/${eventId}`);
-    return { data: res.data, error: res.error };
+    return { data: res.data ? mapEvent(res.data) : null, error: res.error };
   },
 
   /**

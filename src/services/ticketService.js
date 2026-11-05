@@ -5,6 +5,34 @@ import api from './apiClient';
  * Interfaces with FastAPI endpoints at /api/v1/tickets
  */
 
+/** Map a `tickets` row (plus joined event) to the attendee pass shape. */
+export function mapTicket(row) {
+  if (!row) return row;
+  const event = row.events || {};
+  const ticketId = row.ticket_id || row.ticketId;
+  const eventId = row.event_id || row.eventId;
+  const location = event.location || row.location || '';
+  const city = event.city || '';
+  return {
+    ...row,
+    ticketId,
+    eventId,
+    eventTitle: event.title || row.eventTitle || '',
+    userName: row.user_name || row.userName || '',
+    userEmail: row.user_email || row.userEmail || '',
+    phone: row.phone || '',
+    date: event.start_date || row.date || row.registration_date || '',
+    time: event.start_time || row.time || '',
+    venue: location ? `${location}${city ? `, ${city}` : ''}` : (row.venue || ''),
+    price: Number(row.price ?? 0),
+    ticketTierName: row.ticket_tier_name || row.ticketTierName || 'General Admission',
+    registrationDate: row.registration_date || row.registrationDate || '',
+    registrationType: row.registration_type || row.registrationType || 'Attendee',
+    status: row.status || 'confirmed',
+    qrCodeData: row.qrCodeData || (ticketId ? `ASSEMBLE:${ticketId}:${eventId}` : ''),
+  };
+}
+
 export const ticketService = {
   /**
    * Book ticket(s) for an event
@@ -22,7 +50,8 @@ export const ticketService = {
     if (res.error) {
       return { data: [], error: res.error };
     }
-    return { data: res.data || [], error: null };
+    const rows = Array.isArray(res.data) ? res.data : [];
+    return { data: rows.map(mapTicket), error: null };
   },
 
   /**

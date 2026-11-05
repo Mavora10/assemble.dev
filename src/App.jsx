@@ -396,16 +396,11 @@ export function App() {
   // On mount, fetch live data from FastAPI. If the backend is offline the app
   // silently falls back to whatever is already in state (localStorage / initial data).
   useEffect(() => {
-    // Hydrate events
-    eventService.getEvents({ limit: 50 }).then(({ data }) => {
-      if (data && data.length > 0) {
-        setEvents((prev) => {
-          const merged = [...data];
-          const apiIds = new Set(data.map((e) => e.id));
-          prev.forEach((e) => { if (!apiIds.has(e.id)) merged.push(e); });
-          return merged;
-        });
-      }
+    // Hydrate events from the events table. An empty table replaces demo data.
+    eventService.getEvents({ limit: 50 }).then(({ data, error }) => {
+      if (error) return;
+      setEvents(data);
+      localStorage.setItem('assemble_events', JSON.stringify(data));
     }).catch(() => {});
 
     // Hydrate communities
@@ -423,18 +418,10 @@ export function App() {
     // Hydrate own tickets (only if logged in)
     const token = localStorage.getItem('assemble_auth_token');
     if (token) {
-      ticketService.getMyTickets().then(({ data }) => {
-        if (data && data.length > 0) {
-          setTickets((prev) => {
-            const merged = [...data];
-            const apiIds = new Set(data.map((t) => t.ticket_id || t.ticketId));
-            prev.forEach((t) => {
-              const id = t.ticket_id || t.ticketId;
-              if (!apiIds.has(id)) merged.push(t);
-            });
-            return merged;
-          });
-        }
+      ticketService.getMyTickets().then(({ data, error }) => {
+        if (error) return;
+        setTickets(data);
+        localStorage.setItem('assemble_tickets', JSON.stringify(data));
       }).catch(() => {});
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -621,6 +608,11 @@ export function App() {
     }
     setCurrentUser(user);
     setUserRole(user.role);
+    ticketService.getMyTickets().then(({ data, error }) => {
+      if (error) return;
+      setTickets(data);
+      localStorage.setItem('assemble_tickets', JSON.stringify(data));
+    }).catch(() => {});
     const redirectPath = localStorage.getItem('assemble_redirect') || '/dashboard';
     localStorage.removeItem('assemble_redirect');
     navigate(redirectPath);
