@@ -28,9 +28,15 @@ import { SPONSORSHIP_STATUS, sponsorshipNeedMatches } from './utils/sponsorship'
 import { canEditEvent } from './utils/eventPermissions';
 import { notifyRegisteredAttendees } from './utils/notifications';
 import { ROLE_JOURNEY } from './components/landing/journey';
-import { eventService } from './services/eventService';
-import { communityService } from './services/communityService';
-import { ticketService } from './services/ticketService';
+import {
+  eventService,
+  communityService,
+  ticketService,
+  venueService,
+  speakerService,
+  sponsorshipService,
+  merchandiseService,
+} from './services';
 
 // The landing experience (3D canvas + animations) loads separately from the app shell
 const LandingView = lazy(() => import('./components/landing/LandingView'));
@@ -424,6 +430,48 @@ export function App() {
         localStorage.setItem('assemble_tickets', JSON.stringify(data));
       }).catch(() => {});
     }
+
+    // Hydrate venues
+    venueService.getVenues().then(({ data, error }) => {
+      if (error || !data || data.length === 0) return;
+      setVenues(data);
+      localStorage.setItem('assemble_venues', JSON.stringify(data));
+    }).catch(() => {});
+
+    // Hydrate venue bookings
+    venueService.getBookings().then(({ data, error }) => {
+      if (error || !data || data.length === 0) return;
+      setVenueBookings(data);
+      localStorage.setItem('assemble_venue_bookings', JSON.stringify(data));
+    }).catch(() => {});
+
+    // Hydrate speakers
+    speakerService.getSpeakers().then(({ data, error }) => {
+      if (error || !data || data.length === 0) return;
+      setSpeakers(data);
+      localStorage.setItem('assemble_speakers', JSON.stringify(data));
+    }).catch(() => {});
+
+    // Hydrate speaking invites
+    speakerService.getMyInvitations().then(({ data, error }) => {
+      if (error || !data || data.length === 0) return;
+      setSpeakingInvites(data);
+      localStorage.setItem('assemble_speaking_invites', JSON.stringify(data));
+    }).catch(() => {});
+
+    // Hydrate sponsorship requests
+    sponsorshipService.getMyRequests().then(({ data, error }) => {
+      if (error || !data || data.length === 0) return;
+      setSponsorshipRequests(data);
+      localStorage.setItem('assemble_sponsorship_requests', JSON.stringify(data));
+    }).catch(() => {});
+
+    // Hydrate merchandise orders
+    merchandiseService.getMyOrders().then(({ data, error }) => {
+      if (error || !data || data.length === 0) return;
+      setGoodiesOrders(data);
+      localStorage.setItem('assemble_goodies_orders', JSON.stringify(data));
+    }).catch(() => {});
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   // ──────────────────────────────────────────────────────────────────────────
@@ -447,8 +495,29 @@ export function App() {
       status: 'submitted',
       deliveryDate: new Date(Date.now() + 10 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
     };
-    setGoodiesOrders([newOrder, ...goodiesOrders]);
+    setGoodiesOrders((prev) => [newOrder, ...prev]);
     setGoodiesCart([]);
+
+    // Sync to backend merchandise order API
+    merchandiseService.createOrder({
+      eventId,
+      eventTitle,
+      items: (items || []).map((it) => ({
+        productId: it.id || 'prod-custom',
+        productName: it.name || it.product || 'Swag Item',
+        quantity: it.quantity || 1,
+        unitPrice: it.price || it.unitPrice || 10,
+        selectedColor: it.color || 'Black',
+        selectedSize: it.size || 'L',
+      })),
+      shippingAddress: {
+        street: 'Main Street',
+        city: 'City',
+        country: 'India',
+        postalCode: '600001'
+      }
+    }).catch(() => {});
+
     return newOrder;
   };
 
@@ -470,10 +539,18 @@ export function App() {
   }, []);
 
   const handleRequestSponsorship = (request) => {
-    setSponsorshipRequests((prev) => [
-      { status: SPONSORSHIP_STATUS.REQUESTED, ...request },
-      ...prev,
-    ]);
+    const newReq = { status: SPONSORSHIP_STATUS.REQUESTED, ...request };
+    setSponsorshipRequests((prev) => [newReq, ...prev]);
+
+    sponsorshipService.submitRequest({
+      eventId: request.eventId,
+      requirement: request.requirement || request.tierName || 'General Sponsor',
+      offeredAmount: Number(request.amount) || 0,
+      sponsorNotes: request.pitch || '',
+      companyName: request.sponsorName,
+      contactEmail: request.sponsorEmail,
+      status: 'REQUESTED'
+    }).catch(() => {});
   };
 
   // Record an approved sponsorship on its event: add the sponsor and credit the
@@ -534,18 +611,62 @@ export function App() {
     };
     setSponsorshipRequests((prev) => [request, ...prev]);
     linkSponsorshipToEvent(request);
+
+    sponsorshipService.submitRequest({
+      eventId,
+      requirement,
+      offeredAmount: Number(amount) || 0,
+      sponsorNotes: pitch,
+      companyName: sponsorName,
+      contactEmail: currentUser?.email || '',
+      status: 'APPROVED'
+    }).then(({ data }) => {
+      if (data?.request?.id || data?.request?.request_id) {
+        const backendId = data.request.request_id || data.request.id;
+        setSponsorshipRequests((curr) => curr.map(r => r.requestId === request.requestId ? { ...r, id: backendId, requestId: backendId } : r));
+      }
+    }).catch(() => {});
   };
 
   const handleRequestVenueBooking = (newBooking) => {
     const updated = [newBooking, ...venueBookings];
     setVenueBookings(updated);
     localStorage.setItem('assemble_venue_bookings', JSON.stringify(updated));
+
+    venueService.bookVenue(newBooking.venueId, {
+      eventId: newBooking.eventId,
+      bookingDate: newBooking.bookingDate || newBooking.date || new Date().toISOString().split('T')[0],
+      durationHours: Number(newBooking.durationHours || 6),
+      expectedAttendees: Number(newBooking.expectedAttendees || 100),
+      notes: newBooking.notes || newBooking.specialRequests || ''
+    }).then(({ data }) => {
+      if (data && (data.booking_id || data.id)) {
+        const backendId = data.booking_id || data.id;
+        setVenueBookings((curr) =>
+          curr.map((b) => (b.id === newBooking.id ? { ...b, id: backendId, bookingId: backendId } : b))
+        );
+      }
+    }).catch(() => {});
   };
 
   const handleInviteSpeaker = (newInvite) => {
     const updated = [newInvite, ...speakingInvites];
     setSpeakingInvites(updated);
     localStorage.setItem('assemble_speaking_invites', JSON.stringify(updated));
+
+    speakerService.inviteSpeaker({
+      speakerId: newInvite.speakerId,
+      eventId: newInvite.eventId,
+      sessionType: newInvite.sessionType || 'Keynote',
+      pitch: newInvite.pitch || newInvite.message || 'Keynote speaking invite'
+    }).then(({ data }) => {
+      if (data && (data.invite_id || data.id)) {
+        const backendId = data.invite_id || data.id;
+        setSpeakingInvites((curr) =>
+          curr.map((inv) => (inv.id === newInvite.id ? { ...inv, id: backendId, inviteId: backendId } : inv))
+        );
+      }
+    }).catch(() => {});
   };
 
   const handleSimulateSponsorApprove = (requestId) => {
@@ -555,16 +676,18 @@ export function App() {
       prev.map((r) => (r.requestId === requestId || r.id === requestId ? { ...r, status: SPONSORSHIP_STATUS.APPROVED } : r))
     );
     linkSponsorshipToEvent(req);
+    sponsorshipService.updateRequestStatus(requestId, 'APPROVED').catch(() => {});
   };
 
   const handleSimulateSponsorReject = (requestId) => {
-    setSponsorshipRequests(
-      sponsorshipRequests.map(r =>
+    setSponsorshipRequests((prev) =>
+      prev.map(r =>
         (r.requestId === requestId || r.id === requestId)
           ? { ...r, status: SPONSORSHIP_STATUS.REJECTED }
           : r
       )
     );
+    sponsorshipService.updateRequestStatus(requestId, 'REJECTED').catch(() => {});
   };
 
   // Sync state with HTML5 History
@@ -789,19 +912,29 @@ export function App() {
     handleActivateRole('sponsor', sponsorProfile);
   };
 
-  const handleAcceptSpeakingInvite = (inviteId) => {
+  const handleAcceptSpeakingInvite = async (inviteId) => {
     const updated = speakingInvites.map(inv => inv.id === inviteId ? { ...inv, status: 'accepted' } : inv);
     setSpeakingInvites(updated);
     localStorage.setItem('assemble_speaking_invites', JSON.stringify(updated));
+    try {
+      await speakerService.updateInvitationStatus(inviteId, 'accepted');
+    } catch (e) {
+      console.warn('Backend updateInvitationStatus failed, using local fallback:', e);
+    }
   };
 
-  const handleDeclineSpeakingInvite = (inviteId) => {
+  const handleDeclineSpeakingInvite = async (inviteId) => {
     const updated = speakingInvites.map(inv => inv.id === inviteId ? { ...inv, status: 'declined' } : inv);
     setSpeakingInvites(updated);
     localStorage.setItem('assemble_speaking_invites', JSON.stringify(updated));
+    try {
+      await speakerService.updateInvitationStatus(inviteId, 'declined');
+    } catch (e) {
+      console.warn('Backend updateInvitationStatus failed, using local fallback:', e);
+    }
   };
 
-  const handleApplyForSpeaking = (eventId, pitch) => {
+  const handleApplyForSpeaking = async (eventId, pitch) => {
     const targetEvent = events.find(e => e.id === eventId);
     const newApp = {
       id: `spk-app-${Date.now()}`,
@@ -816,9 +949,24 @@ export function App() {
     const updated = [newApp, ...speakingInvites];
     setSpeakingInvites(updated);
     localStorage.setItem('assemble_speaking_invites', JSON.stringify(updated));
+    try {
+      const res = await speakerService.inviteSpeaker({
+        eventId,
+        speakerName: currentUser?.name || 'Applicant Speaker',
+        speakerEmail: currentUser?.email || 'speaker@connect.dev',
+        topic: pitch,
+        message: pitch,
+        status: 'pending'
+      });
+      if (res.data?.id) {
+        setSpeakingInvites(prev => prev.map(inv => inv.id === newApp.id ? { ...inv, id: res.data.id } : inv));
+      }
+    } catch (e) {
+      console.warn('Backend inviteSpeaker failed, using local fallback:', e);
+    }
   };
 
-  const handleUpdateSpeakerProfile = (profileData) => {
+  const handleUpdateSpeakerProfile = async (profileData) => {
     if (!currentUser) return;
     const updatedUser = {
       ...currentUser,
@@ -835,12 +983,33 @@ export function App() {
     );
     setSpeakers(updatedSpeakers);
     localStorage.setItem('assemble_speakers', JSON.stringify(updatedSpeakers));
+    try {
+      await speakerService.registerSpeaker({
+        name: currentUser.name || 'Speaker',
+        bio: profileData.bio || '',
+        topics: profileData.topics || [],
+        experienceLevel: profileData.experienceLevel || 'Intermediate',
+        feeRange: profileData.feeRange || 'Free / Community',
+        location: profileData.location || 'Remote',
+        avatarUrl: currentUser.avatarUrl || ''
+      });
+    } catch (e) {
+      console.warn('Backend registerSpeaker failed, using local fallback:', e);
+    }
   };
 
-  const handleAddVenue = (newVenue) => {
+  const handleAddVenue = async (newVenue) => {
     const updated = [newVenue, ...venues];
     setVenues(updated);
     localStorage.setItem('assemble_venues', JSON.stringify(updated));
+    try {
+      const res = await venueService.createVenue(newVenue);
+      if (res.data?.id) {
+        setVenues(prev => prev.map(v => v.id === newVenue.id ? { ...v, id: res.data.id } : v));
+      }
+    } catch (e) {
+      console.warn('Backend createVenue failed, using local fallback:', e);
+    }
   };
 
   const handleUpdateVenue = (updatedVenue) => {
@@ -849,16 +1018,26 @@ export function App() {
     localStorage.setItem('assemble_venues', JSON.stringify(updated));
   };
 
-  const handleAcceptVenueBooking = (bookingId) => {
+  const handleAcceptVenueBooking = async (bookingId) => {
     const updated = venueBookings.map(b => b.id === bookingId ? { ...b, status: 'confirmed' } : b);
     setVenueBookings(updated);
     localStorage.setItem('assemble_venue_bookings', JSON.stringify(updated));
+    try {
+      await venueService.updateBookingStatus(bookingId, 'confirmed');
+    } catch (e) {
+      console.warn('Backend updateBookingStatus failed, using local fallback:', e);
+    }
   };
 
-  const handleDeclineVenueBooking = (bookingId) => {
+  const handleDeclineVenueBooking = async (bookingId) => {
     const updated = venueBookings.map(b => b.id === bookingId ? { ...b, status: 'declined' } : b);
     setVenueBookings(updated);
     localStorage.setItem('assemble_venue_bookings', JSON.stringify(updated));
+    try {
+      await venueService.updateBookingStatus(bookingId, 'declined');
+    } catch (e) {
+      console.warn('Backend updateBookingStatus failed, using local fallback:', e);
+    }
   };
 
   const handleUpdateCapabilities = (newCap) => {

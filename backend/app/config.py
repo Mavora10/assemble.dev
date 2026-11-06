@@ -5,6 +5,7 @@ class Settings(BaseSettings):
     PORT: int = 8000
     ENVIRONMENT: str = "development"
     FRONTEND_URL: str = "http://localhost:3000"
+    CORS_ORIGINS: Optional[str] = None
     
     SUPABASE_URL: str
     SUPABASE_ANON_KEY: str
